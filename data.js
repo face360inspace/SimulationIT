@@ -97,7 +97,7 @@ const PERSPECTIVE_LABELS = { ma: 'Mitarbeiter', it: 'IT-Team', mgmt: 'Management
    schwächste Feld begrenzt. */
 const FIELDS = [
   {
-    id: 'endpoint', name: 'Arbeitsplatz & Geräte',
+    id: 'endpoint', short: ['Manuelle Installation', 'Standard-Hardware & CMDB', 'Zero-Touch-Provisioning', 'Geräte-Telemetrie (DEX)', 'Selbstheilende Clients'], name: 'Arbeitsplatz & Geräte',
     stages: [
       'Geräte werden manuell installiert, Images per USB, Inventar in Excel.',
       'Standard-Hardwarekatalog, zentrale Imaging-Lösung, Inventar in der CMDB.',
@@ -107,7 +107,7 @@ const FIELDS = [
     ]
   },
   {
-    id: 'identity', name: 'Identität & Zugriff',
+    id: 'identity', short: ['Manuelle Konten', 'Verzeichnis & Rollenmodell', 'HR-Provisionierung, SSO, MFA', 'Conditional Access', 'Passwordless & Zero Trust'], name: 'Identität & Zugriff',
     stages: [
       'Konten manuell angelegt, Berechtigungen per E-Mail-Anfrage, Passwörter telefonisch zurückgesetzt.',
       'Zentrales Verzeichnis, dokumentiertes Rollenmodell, Passwort-Self-Service.',
@@ -117,7 +117,7 @@ const FIELDS = [
     ]
   },
   {
-    id: 'telemetry', name: 'Telemetrie, Daten & KI',
+    id: 'telemetry', short: ['Server-Monitoring', 'Zentrales Monitoring', 'End-to-End-Telemetrie', 'AIOps & Prognosen', 'KI-Agenten mit Leitplanken'], name: 'Telemetrie, Daten & KI',
     stages: [
       'Monitoring nur auf Servern, Alarme per E-Mail, keine Daten von Endgeräten.',
       'Zentrales Monitoring der gesamten Infrastruktur, definierte Schwellwerte, Dashboard für die IT.',
@@ -127,7 +127,7 @@ const FIELDS = [
     ]
   },
   {
-    id: 'automation', name: 'Automatisierung & Orchestrierung',
+    id: 'automation', short: ['Einzelskripte', 'Skript-Bibliothek & Patch-Plan', 'Workflow-Engine & Runbooks', 'Auto-Remediation & IaC', 'Autonome Orchestrierung'], name: 'Automatisierung & Orchestrierung',
     stages: [
       'Einzelne Skripte auf Admin-Rechnern, nicht dokumentiert, personenabhängig.',
       'Versionierte Skript-Bibliothek, zentral geplantes Patch-Management.',
@@ -137,7 +137,7 @@ const FIELDS = [
     ]
   },
   {
-    id: 'service', name: 'Service Management & Self-Service',
+    id: 'service', short: ['Telefon & E-Mail', 'ITSM & Servicekatalog', 'Self-Service & Chatbot', 'Proaktive Kommunikation', 'Experience-Team'], name: 'Service Management & Self-Service',
     stages: [
       'Anfragen per Telefon und E-Mail, kein oder nur ein rudimentäres Ticketsystem.',
       'ITSM-Werkzeug mit Incident-, Request- und Change-Prozess, Servicekatalog, SLAs.',
@@ -147,7 +147,7 @@ const FIELDS = [
     ]
   },
   {
-    id: 'security', name: 'Sicherheit & Compliance',
+    id: 'security', short: ['Virenschutz & Firewall', 'Patch-Zyklen & Richtlinien', 'Auto-Patching, EDR, SIEM', 'Risikobasiert & Compliance-Automatik', 'SOAR & Zero Trust'], name: 'Sicherheit & Compliance',
     stages: [
       'Virenschutz und Firewall, Patches manuell und unregelmäßig.',
       'Definierte Patch-Zyklen, dokumentierte Sicherheitsrichtlinien, Awareness-Schulungen.',
@@ -157,7 +157,7 @@ const FIELDS = [
     ]
   },
   {
-    id: 'org', name: 'Organisation, Rollen & Kultur',
+    id: 'org', short: ['Helden-Kultur', 'Rollen & Prozesse', 'Automation Engineering', 'Produktteams & XLA', 'Steuerung & Policies'], name: 'Organisation, Rollen & Kultur',
     stages: [
       'Helden-Kultur: Wissen liegt bei einzelnen Personen, die IT arbeitet als Feuerwehr.',
       'Klare Rollen und Verantwortlichkeiten, dokumentierte Prozesse, regelmäßige Reviews.',
@@ -238,7 +238,7 @@ const T = (h, m) => h * 60 + (m || 0);
    w = optionaler Hinweis, der während des Wartens angezeigt wird. */
 const EVENTS = [
   {
-    id: 'onboarding', start: T(7, 30), field: 'identity',
+    id: 'onboarding', start: T(7, 30), fields: ['identity', 'endpoint'],
     title: 'Neuer Mitarbeiter: Jonas Weber startet heute im Controlling',
     v: [
       {
@@ -293,7 +293,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'erp', start: T(7, 50), field: 'automation',
+    id: 'erp', start: T(7, 50), fields: ['automation', 'telemetry'],
     title: 'ERP-Client-Update verursacht Abstürze',
     startByLevel: { 3: T(16, 30), 4: T(16, 30), 5: T(16, 30) },
     v: [
@@ -349,7 +349,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'ssd', start: T(8, 10), field: 'endpoint',
+    id: 'ssd', start: T(8, 10), fields: ['endpoint', 'service'],
     title: 'SSD-Verschleiß auf dem Notebook von Anna Berger (Vertrieb)',
     v: [
       {
@@ -412,7 +412,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'cve', start: T(9, 5), field: 'security',
+    id: 'cve', start: T(9, 5), fields: ['security', 'automation'],
     title: 'Kritische Schwachstelle im Browser, aktiv ausgenutzt',
     v: [
       {
@@ -468,7 +468,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'storage', start: T(10, 20), field: 'telemetry',
+    id: 'storage', start: T(10, 20), fields: ['telemetry', 'automation'],
     title: 'Fileshare „Projekte“ läuft voll',
     v: [
       {
@@ -524,7 +524,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'license', start: T(11, 0), field: 'service',
+    id: 'license', start: T(11, 0), fields: ['service', 'automation'],
     title: 'Lizenzanfrage: Mehmet Yilmaz braucht Visio',
     v: [
       {
@@ -579,7 +579,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'login', start: T(12, 30), field: 'security',
+    id: 'login', start: T(12, 30), fields: ['security', 'identity'],
     title: 'Verdächtige Anmeldung: Konto von Petra Lang aus Lagos, zwei Minuten nach München',
     v: [
       {
@@ -634,7 +634,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'wlan', start: T(13, 15), field: 'telemetry',
+    id: 'wlan', start: T(13, 15), fields: ['telemetry', 'automation'],
     title: 'WLAN im Besprechungsraum „Alpen“ bricht während eines Workshops ein',
     startByLevel: { 4: T(7, 45), 5: T(7, 45) },
     v: [
@@ -689,7 +689,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'mfa', start: T(14, 0), field: 'identity',
+    id: 'mfa', start: T(14, 0), fields: ['identity', 'service'],
     title: 'MFA-Gerät verloren: Sven Hartmann hat sein Smartphone im Zug vergessen',
     v: [
       {
@@ -741,8 +741,8 @@ const EVENTS = [
     ]
   },
   {
-    id: 'teams', start: T(15, 10), field: 'telemetry',
-    title: 'Teams-Anrufqualität sinkt für 40 Mitarbeiter am Standort Hamburg',
+    id: 'teams', start: T(15, 10), fields: ['telemetry', 'automation'],
+    title: 'Teams-Anrufqualität sinkt für 40 Mitarbeiter im Kundenservice',
     v: [
       {
         title: '„Teams hackt“, Ursache unbekannt',
@@ -765,7 +765,7 @@ const EVENTS = [
       {
         title: 'Dashboard zeigt Jitter, Change wird zurückgesetzt',
         steps: [
-          { a: 'sys', t: 'Das Call-Quality-Dashboard zeigt einen Jitter-Anstieg in Hamburg. Alarm an das Netzwerkteam.', d: 15 },
+          { a: 'sys', t: 'Das Call-Quality-Dashboard zeigt einen Jitter-Anstieg im Kundenservice. Alarm an das Netzwerkteam.', d: 15 },
           { a: 'tech', t: 'Techniker erkennt den Zusammenhang mit Change #312 (Firewall) und setzt die Konfiguration zurück.', d: 45 },
           { a: 'ma', t: 'Nach einer Stunde ist die Qualität wieder normal.', d: 0 }
         ],
@@ -774,7 +774,7 @@ const EVENTS = [
       {
         title: 'Korrelation mit Change #312 in vier Minuten',
         steps: [
-          { a: 'sys', t: 'AIOps korreliert: Jitter-Anstieg vier Minuten nach Change #312 am Standort Hamburg.', d: 2 },
+          { a: 'sys', t: 'AIOps korreliert: Jitter-Anstieg vier Minuten nach Change #312 im Kundenservice.', d: 2 },
           { a: 'ai', t: 'Vorschlag: Rollback der QoS-Konfiguration. Der Change-Owner wird informiert.', d: 2 },
           { a: 'mgr', t: 'Der Change-Owner bestätigt den Rollback.', d: 8 },
           { a: 'sys', t: 'Rollback durchgeführt. Qualität nach zwölf Minuten wieder normal.', d: 2 },
@@ -794,7 +794,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'offboarding', start: T(16, 0), field: 'identity',
+    id: 'offboarding', start: T(16, 0), fields: ['identity'],
     title: 'Austritt: Claudia Fischer verlässt heute das Unternehmen',
     v: [
       {
@@ -849,3 +849,35 @@ const EVENTS = [
 
 const DAY_START = T(7, 0);
 const DAY_END = T(19, 30);
+
+/* ---------- Spiel: Investitionen ---------- */
+/* Kosten in Budgetpunkten, um eine Stufe zu erreichen (Stufe 1 ist die Ausgangslage). */
+const STAGE_COST = [0, 1, 2, 3, 4];
+const BUDGETS = [
+  { points: 12, name: 'Sparsam', desc: 'Ein erstes Jahresbudget. Prioritäten setzen.' },
+  { points: 20, name: 'Ambitioniert', desc: 'Ein mehrjähriges Programm.' },
+  { points: 30, name: 'Transformation', desc: 'Breite Modernisierung über alle Felder.' },
+  { points: 70, name: 'Unbegrenzt', desc: 'Alles ist möglich. Zum Ausprobieren.' }
+];
+
+/* Voraussetzungen über Handlungsfelder hinweg. Liefert null oder einen Grund, warum
+   die Stufe im Feld mit den gegebenen Stufen (levels) noch nicht erreichbar ist. */
+function stageBlocker(fieldId, stage, levels) {
+  if (fieldId === 'org') return null;
+  if (stage >= 4 && fieldId !== 'telemetry' && levels.telemetry < 3) return 'braucht Telemetrie, Daten & KI auf Stufe 3 (End-to-End-Telemetrie)';
+  if (stage === 5) {
+    if (fieldId !== 'telemetry' && levels.telemetry < 4) return 'braucht Telemetrie, Daten & KI auf Stufe 4 (AIOps & Prognosen)';
+    if (fieldId !== 'automation' && levels.automation < 4) return 'braucht Automatisierung & Orchestrierung auf Stufe 4 (Auto-Remediation)';
+  }
+  return null;
+}
+
+/* Wirksame Stufe eines Ereignisses: das schwächste beteiligte Feld, begrenzt durch die
+   Organisation (Stufe der Organisation + 1). */
+function effectiveLevel(ev, levels) {
+  let lv = Math.min.apply(null, ev.fields.map(f => levels[f]));
+  lv = Math.min(lv, levels.org + 1, 5);
+  const limiters = ev.fields.filter(f => levels[f] === lv);
+  if (levels.org + 1 === lv && lv < 5) limiters.push('org');
+  return { level: lv, limiters: limiters };
+}

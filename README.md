@@ -1,40 +1,39 @@
 # Zero-Touch IT Simulator
 
-Interaktive Simulation einer hoch automatisierten, proaktiven IT. Die Anwendung zeigt Kunden, wie sich eine Zero-Touch-IT im Alltag anfühlt, und wie eine Organisation Schritt für Schritt dorthin kommt.
+Ein Spiel über die IT der Zukunft. Sie verteilen ein Budget auf sieben Handlungsfelder, lassen einen Arbeitstag mit elf typischen Ereignissen in einer 3D-Szene ablaufen und sehen in der Auswertung, welche Maßnahme wie gewirkt hat und welche Investition als nächste am meisten bringt.
 
-## Was die Simulation zeigt
+## Spielablauf
 
-**Simulation.** Ein Arbeitstag von 07:00 bis 19:30 mit elf typischen Ereignissen: Onboarding, SSD-Verschleiß, kritische Schwachstelle, voller Fileshare, Lizenzanfrage, Kontoübernahme, WLAN-Ausfall, verlorenes MFA-Gerät, Teams-Anrufqualität, Austritt, fehlerhaftes Anwendungs-Update. Jedes Ereignis läuft auf jedem der fünf Reifegrade anders ab. Kennzahlen (offene Fälle, Tickets, IT-Aufwand, Ausfallzeit, manuelle Eingriffe, Experience-Index) und drei Perspektiven (Mitarbeiter, IT-Team, Management) zeigen die Wirkung. Jede Karte lässt sich auf alle fünf Stufen vergleichen.
+1. **Planen.** Budget wählen (12, 20, 30 Punkte oder unbegrenzt) und in der Investitionsmatrix je Handlungsfeld die Zielstufe kaufen. Stufe 4 setzt End-to-End-Telemetrie voraus, Stufe 5 zusätzlich AIOps und Auto-Remediation. Die Organisation begrenzt alles: Ereignisse laufen höchstens eine Stufe über der Organisation. Eine Vorschau zeigt vor dem Start, auf welcher Stufe jedes Ereignis laufen wird und welches Feld es begrenzt.
+2. **Beobachten.** Der Arbeitstag läuft von 07:00 bis 19:30 in einem stilisierten Bürogeschoss mit Großraumbüro, Serverraum, Besprechungsraum und Service Desk. Techniker laufen zu Störungen, Automatisierung erscheint als Lichtsäule, der KI-Agent als Drohne, Freigaben als Häkchen am Service Desk. Rote Bildschirme zeigen blockierte Mitarbeiter, Ticketstapel die Warteschlange. Kennzahlen, Experience-Index und Ereignisprotokoll laufen live mit. Die Kamera folgt neuen Ereignissen, Maus ziehen dreht, Mausrad zoomt.
+3. **Auswerten.** Kennzahlen im Vergleich zu „Ohne Investition“ und zum letzten Durchlauf, Ergebnis je Ereignis mit begrenzendem Feld, und die beste nächste Investition (je eine Stufe mehr in einem Feld, bewertet an diesem Tag). Danach neu planen.
 
-**Reifegrade.** Die fünf Stufen Reaktiv, Standardisiert, Automatisiert, Proaktiv und Autonom mit Beschreibung, Richtwerten, Rollenverteilung, Diagrammen zum Tagesvergleich und zum Anteil von Mensch, Automatisierung und KI-Agent.
-
-**Ihr Weg.** Selbsteinschätzung über sieben Handlungsfelder (Arbeitsplatz & Geräte, Identität & Zugriff, Telemetrie, Daten & KI, Automatisierung & Orchestrierung, Service Management & Self-Service, Sicherheit & Compliance, Organisation, Rollen & Kultur). Daraus entstehen Standort, Engpass und eine Roadmap mit Schritten, typischer Dauer, Maßnahmen und Erfolgskriterien. Die Einschätzung lässt sich direkt als Simulationsstufe erleben und als Text kopieren.
+Ergänzend zwei Wissensseiten: **Reifegrade** (fünf Stufen mit Richtwerten, Perspektiven und Diagrammen) und **Ihr Weg** (Selbsteinschätzung über sieben Handlungsfelder mit Roadmap). Die Einschätzung lässt sich als Ausgangslage ins Spiel übernehmen; vorhandene Stufen kosten dann kein Budget.
 
 ## Nutzung
 
-Die Anwendung besteht aus statischen Dateien ohne Build-Schritt.
+Statische Dateien ohne Build-Schritt. `index.html` lokal öffnen oder über einen Webserver ausliefern (zum Beispiel `python3 -m http.server`), für GitHub Pages genügt das Wurzelverzeichnis. three.js wird von cdnjs geladen, Schriften von Google Fonts. Ohne WebGL funktionieren Planung, Protokoll und Auswertung weiterhin.
 
-- `index.html` lokal im Browser öffnen oder über einen beliebigen Webserver ausliefern, zum Beispiel `python3 -m http.server`.
-- Für GitHub Pages den Branch als Quelle wählen, das Wurzelverzeichnis genügt.
-
-Tastatur: Leertaste für Pause und Weiter, Ziffern 1 bis 5 für den Reifegrad, Pfeil rechts für das Tagesende.
+Tastatur während des Tages: Leertaste für Pause und Weiter, Pfeil rechts für das Tagesende, Escape für Neu planen.
 
 ## Inhalte anpassen
 
 Alle fachlichen Inhalte liegen in `data.js`:
 
-- `LEVELS` und `PERSPECTIVES`: Reifegrade, Richtwerte, Zitate.
-- `FIELDS`: Handlungsfelder mit je fünf Ausbaustufen (Matrix der Selbsteinschätzung).
-- `TRANSITIONS`: Fokus, Dauer, Maßnahmen und Erfolgskriterium je Schritt.
-- `EVENTS`: Ereignisse mit fünf Varianten, jede mit Schritten (`a` Akteur, `t` Text, `d` Dauer in Minuten, `w` Wartehinweis) sowie Aufwand (`it`), Ausfallzeit (`user`), Eingriffen (`touches`), Ticket und Kennzeichen `prevented`.
+- `LEVELS`, `PERSPECTIVES`: Reifegrade, Richtwerte, Zitate.
+- `FIELDS`: Handlungsfelder mit Kurztiteln (`short`) und Beschreibungen (`stages`) je Stufe.
+- `STAGE_COST`, `BUDGETS`, `stageBlocker()`, `effectiveLevel()`: Kosten, Budgets, Voraussetzungen und die Regel, auf welcher Stufe ein Ereignis läuft.
+- `TRANSITIONS`: Fokus, Dauer, Maßnahmen und Erfolgskriterium je Schritt der Roadmap.
+- `EVENTS`: Ereignisse mit beteiligten Feldern (`fields`) und fünf Varianten, jede mit Schritten (`a` Akteur, `t` Text, `d` Dauer in Minuten, `w` Wartehinweis) sowie Aufwand (`it`), Ausfallzeit (`user`), Eingriffen (`touches`), Ticket und Kennzeichen `prevented`.
 
-Kennzahlen, Diagramme und der Experience-Index werden aus diesen Daten berechnet. Alle Zahlen sind illustrative Richtwerte, keine Benchmarks.
+Alle Zahlen sind illustrative Richtwerte, keine Benchmarks.
 
 ## Dateien
 
 | Datei | Inhalt |
 |---|---|
-| `index.html` | Seitenstruktur |
+| `index.html` | Seitenstruktur: Spielbühne, Overlays, Wissensseiten |
 | `styles.css` | Gestaltung, hell und dunkel |
-| `data.js` | Inhalte der Simulation |
-| `app.js` | Simulationsengine, Diagramme, Selbsteinschätzung, Roadmap |
+| `data.js` | Inhalte und Spielregeln |
+| `game.js` | 3D-Szene (three.js): Gebäude, Figuren, Marker, Effekte, Kamera |
+| `app.js` | Spielablauf, Planung, Simulationsengine, HUD, Auswertung, Wissensseiten |
