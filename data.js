@@ -850,7 +850,7 @@ const EVENTS = [
 const DAY_START = T(7, 0);
 const DAY_END = T(19, 30);
 
-/* ---------- Spiel: Investitionen ---------- */
+/* ---------- Simulation: Investitionen ---------- */
 /* Kosten in Budgetpunkten, um eine Stufe zu erreichen (Stufe 1 ist die Ausgangslage). */
 const STAGE_COST = [0, 1, 2, 3, 4];
 const BUDGETS = [

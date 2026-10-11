@@ -1,6 +1,6 @@
 /* =========================================================================
-   Zero-Touch IT Simulator – Spiellogik
-   Ablauf: Start → Planen (Budget auf Handlungsfelder verteilen) → Spielen
+   Zero-Touch IT Simulator – Ablauflogik
+   Ablauf: Start → Planen (Budget auf Handlungsfelder verteilen) → Simulieren
    (ein Arbeitstag in der 3D-Szene) → Auswerten (Wirkung der Maßnahmen).
    Dazu zwei Wissensseiten: Reifegrade und Ihr Weg (Selbsteinschätzung).
    Erwartet data.js und game.js (window.Scene3D).
@@ -393,7 +393,7 @@
       '<div class="kpis">' + Object.keys(KPI_LABELS).map(k => '<div class="tile"><div class="lbl">' + KPI_LABELS[k] + '</div><div class="val">' + l.kpi[k] + '</div></div>').join('') + '</div>' +
       '<p class="note" style="margin-top:8px">Typische Richtwerte zur Orientierung, keine Benchmarks.</p>' +
       '<h3 style="margin-top:18px">So fühlt sich diese Stufe an</h3><div class="quotes" style="margin-top:8px">' + ['ma', 'it', 'mgmt'].map(k => '<div class="quote"><div class="who">' + PERSPECTIVE_LABELS[k] + '</div><p>„' + esc(q[k]) + '“</p></div>').join('') + '</div>' +
-      '<div class="actions"><button class="btn primary" type="button" data-play-level="' + lv + '">Diesen Tag im Spiel erleben</button></div>';
+      '<div class="actions"><button class="btn primary" type="button" data-play-level="' + lv + '">Diesen Tag in der Simulation erleben</button></div>';
     const series = [{ k: 'it', cap: 'IT-Aufwand in Stunden', unit: 'h' }, { k: 'user', cap: 'Ausfallzeit der Mitarbeiter in Stunden', unit: 'h' }, { k: 'tickets', cap: 'Tickets', unit: 'Tickets' }];
     $('#multiples').innerHTML = series.map(sr => {
       const vals = TOTALS.map(t => sr.k === 'tickets' ? t[sr.k] : t[sr.k] / 60);
@@ -437,7 +437,7 @@
       '<div class="hero-num" style="margin-top:6px">' + fmtNum(avg, 1) + '<small>von 5</small></div>' +
       '<p class="muted small" style="margin-top:6px">Durchschnitt über sieben Handlungsfelder. Wirksam wird Automatisierung erst, wenn das schwächste Feld mitzieht: ' + (bottleneck.length === FIELDS.length ? 'alle Felder stehen auf Stufe ' + mn + '.' : '<b>' + bottleneck.map(b => b.name).join(', ') + '</b> auf Stufe ' + mn + '.') + '</p>' +
       '<div class="fieldbars">' + FIELDS.map(f => { const v = state.assessment[f.id] || 1; return '<div class="fieldbar' + (v === mn && bottleneck.length < FIELDS.length ? ' bottleneck' : '') + '"><div class="nm">' + f.name + '</div><div class="seg">' + [1, 2, 3, 4, 5].map(n => '<i class="' + (n <= v ? 'on' : '') + (n <= tgt && n > v ? ' target' : '') + '"></i>').join('') + '</div><div class="v">' + v + ' → ' + tgt + '</div></div>'; }).join('') + '</div>' +
-      '<div class="actions"><button class="btn primary" type="button" data-play-assessment>Als Ausgangslage ins Spiel übernehmen</button><button class="btn" type="button" data-copy>Ergebnis kopieren</button><button class="btn" type="button" data-reset-assess>Zurücksetzen</button></div>';
+      '<div class="actions"><button class="btn primary" type="button" data-play-assessment>Als Ausgangslage in die Simulation übernehmen</button><button class="btn" type="button" data-copy>Ergebnis kopieren</button><button class="btn" type="button" data-reset-assess>Zurücksetzen</button></div>';
     $('[data-play-assessment]', box).onclick = () => { state.useAssessment = true; store.set('zt.useAssessment', true); applyBase(); showView('game'); showScreen('plan'); toast('Ausgangslage übernommen. Verteilen Sie jetzt Ihr Budget.'); };
     $('[data-copy]', box).onclick = copyResult;
     $('[data-reset-assess]', box).onclick = () => { FIELDS.forEach(f => { state.assessment[f.id] = 2; }); state.assessed = false; store.set('zt.assessment', state.assessment); store.set('zt.assessed', false); renderMatrix(); toast('Einschätzung zurückgesetzt'); };

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Zero-Touch IT Simulator</title>
-<meta name="description" content="Spiel: Budget auf IT-Maßnahmen verteilen, einen Arbeitstag in 3D ablaufen lassen und sehen, wie Automatisierung und Proaktivität wirken.">
+<meta name="description" content="Simulation: Budget auf IT-Maßnahmen verteilen, einen Arbeitstag in 3D ablaufen lassen und sehen, wie Automatisierung und Proaktivität wirken.">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 24 24%27%3E%3Crect width=%2724%27 height=%2724%27 rx=%276%27 fill=%27%231f66c2%27/%3E%3Cpath d=%27M5 14l5-5 4 4 6-6%27 fill=%27none%27 stroke=%27%23fff%27 stroke-width=%272%27 stroke-linecap=%27round%27 stroke-linejoin=%27round%27/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -65,7 +65,7 @@
   <!-- Startbildschirm -->
   <section class="overlay" id="screen-start">
     <div class="overlay-card start">
-      <div class="eyebrow">Ein Spiel über die IT der Zukunft</div>
+      <div class="eyebrow">Eine Simulation der IT der Zukunft</div>
       <h2>Wie viel Zero Touch kauft Ihr Budget?</h2>
       <p>Sie leiten die IT eines Unternehmens. Verteilen Sie ein Budget auf sieben Handlungsfelder, dann läuft ein Arbeitstag mit elf typischen Ereignissen ab: vom defekten Notebook bis zur Kontoübernahme. Sie sehen in der 3D-Szene, wer eingreifen muss, wer wartet und was automatisch passiert. Die Auswertung zeigt, welche Maßnahme wie gewirkt hat und welche als nächste am meisten bringt.</p>
       <ol class="howto">
@@ -74,7 +74,7 @@
         <li><b>Auswerten.</b> Kennzahlen im Vergleich, Wirkung je Ereignis, beste nächste Investition. Dann neu planen.</li>
       </ol>
       <div class="actions">
-        <button type="button" class="btn primary big" id="startBtn">Spiel starten</button>
+        <button type="button" class="btn primary big" id="startBtn">Simulation starten</button>
         <button type="button" class="btn" data-view="path">Erst Standort bestimmen</button>
         <button type="button" class="btn" data-view="levels">Reifegrade kennenlernen</button>
       </div>
@@ -145,9 +145,9 @@
 <!-- Wissensseiten -->
 <header class="topbar" id="knowledge-nav" hidden>
   <div class="wrap">
-    <a class="brand" href="#" data-view="game"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14l5-5 4 4 7-7"/><path d="M15 6h5v5"/></svg></span><span><h1>Zero-Touch IT Simulator</h1><small>Wissen zum Spiel</small></span></a>
+    <a class="brand" href="#" data-view="game"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14l5-5 4 4 7-7"/><path d="M15 6h5v5"/></svg></span><span><h1>Zero-Touch IT Simulator</h1><small>Wissen zur Simulation</small></span></a>
     <nav class="nav" aria-label="Ansichten">
-      <button type="button" data-view="game">Zum Spiel</button>
+      <button type="button" data-view="game">Zur Simulation</button>
       <button type="button" data-view="levels">Reifegrade</button>
       <button type="button" data-view="path">Ihr Weg</button>
     </nav>
@@ -171,7 +171,7 @@
 
 <section class="view wrap" id="view-path" aria-label="Ihr Weg" hidden>
   <div class="view-head">
-    <div><div class="eyebrow">Standort bestimmen</div><h2>Schritt für Schritt zur Zero-Touch-IT</h2><p>Wählen Sie in jeder Zeile die Beschreibung, die Ihre heutige Praxis am besten trifft. Daraus entstehen Standort, Engpass und eine Roadmap. Die Einschätzung lässt sich als Ausgangslage ins Spiel übernehmen.</p></div>
+    <div><div class="eyebrow">Standort bestimmen</div><h2>Schritt für Schritt zur Zero-Touch-IT</h2><p>Wählen Sie in jeder Zeile die Beschreibung, die Ihre heutige Praxis am besten trifft. Daraus entstehen Standort, Engpass und eine Roadmap. Die Einschätzung lässt sich als Ausgangslage in die Simulation übernehmen.</p></div>
     <div class="target-pick"><span class="eyebrow">Zielstufe</span><div class="segments" id="targetSeg" role="group" aria-label="Zielstufe wählen"></div></div>
   </div>
   <div class="matrix-wrap"><table class="matrix" id="matrix"></table></div>

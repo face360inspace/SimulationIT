@@ -129,7 +129,7 @@ button:focus-visible, [tabindex]:focus-visible, a:focus-visible { outline: 2px s
 .speed button + button { border-left: 1px solid var(--line); }
 .speed button[aria-pressed="true"] { background: var(--fg); color: var(--bg); }
 
-/* ---------- Spiel: Bühne ---------- */
+/* ---------- Simulation: Bühne ---------- */
 #game { position: fixed; inset: 0; overflow: hidden; background: var(--bg); }
 #game[hidden] { display: none; }
 body.in-run { overflow: hidden; }
@@ -199,7 +199,7 @@ body.in-run { overflow: hidden; }
 }
 @media (max-width: 560px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } .hud-top .controls .btn:not(.primary) { padding-inline: 9px; font-size: .8rem; } .hud-top #followBtn, .hud-nav .btn { display: none; } .hud-top .clock { font-size: 1.3rem; } }
 
-/* ---------- Spiel: Overlays ---------- */
+/* ---------- Simulation: Overlays ---------- */
 .overlay { position: absolute; inset: 0; z-index: 10; overflow-y: auto; display: flex; align-items: flex-start; justify-content: center; padding: 24px 16px calc(24px + env(safe-area-inset-bottom, 0px)); background: color-mix(in srgb, var(--bg) 22%, transparent); backdrop-filter: blur(2px); -webkit-backdrop-filter: blur(2px); }
 .overlay[hidden] { display: none; }
 .overlay-card { width: 100%; max-width: 1280px; background: color-mix(in srgb, var(--surface) 94%, transparent); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow); padding: 26px 28px; margin-block: auto; }
