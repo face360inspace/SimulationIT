@@ -2,7 +2,7 @@
    Zero-Touch IT Simulator – Ablauflogik
    Ablauf: Start → Planen (Budget auf Handlungsfelder verteilen) → Simulieren
    (ein Arbeitstag in der 3D-Szene) → Auswerten (Wirkung der Maßnahmen).
-   Dazu zwei Wissensseiten: Reifegrade und Ihr Weg (Selbsteinschätzung).
+   Dazu zwei Wissensseiten: Reifegrade und Standortbestimmung (Selbsteinschätzung).
    Erwartet data.js und game.js (window.Scene3D).
    ========================================================================= */
 (function () {
@@ -11,6 +11,8 @@
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
   const MS_PER_MIN = 170;   // Echtzeit je simulierter Minute bei 1×
+  const ROUTES = { start: 'start', plan: 'planen', run: 'arbeitstag', result: 'auswertung', analysis: 'prognose', levels: 'reifegrade', path: 'standort' };
+  const STEP_NAMES = { plan: 'Planung', run: 'Arbeitstag', result: 'Auswertung', analysis: 'Prognose' };
 
   const store = {
     get(k, fb) { try { const v = localStorage.getItem(k); return v === null ? fb : JSON.parse(v); } catch (e) { return fb; } },
@@ -19,7 +21,7 @@
 
   const allOne = () => { const o = {}; FIELDS.forEach(f => { o[f.id] = 1; }); return o; };
   const state = {
-    view: 'game', screen: 'start',
+    view: 'sim', screen: 'start', returnScreen: 'start', evaluated: false,
     budgetIdx: store.get('zt.budget', 1),
     useAssessment: store.get('zt.useAssessment', false),
     base: allOne(), levels: allOne(),
@@ -111,26 +113,80 @@
   const outcomeCls = v => v.prevented ? 'prevented' : (v.touches === 0 ? 'auto' : (v.ticket ? 'ticket' : 'done'));
 
   /* ---------- Bildschirme ---------- */
-  function showScreen(name) {
+  function setRoute(key, replace) {
+    const hash = '#' + ROUTES[key];
+    if (location.hash === hash) return;
+    if (replace) history.replaceState(null, '', hash); else history.pushState(null, '', hash);
+  }
+  function updateStepper() {
+    const active = state.view === 'sim' ? state.screen : null;
+    $$('#steps [data-step]').forEach(b => {
+      const s = b.dataset.step;
+      if (s === active) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
+      b.disabled = (s === 'result' && !state.evaluated) || (s === 'run' && state.screen === 'run' && !state.ended && state.view === 'sim');
+      b.classList.toggle('done', (s === 'plan' && state.screen !== 'start') || (s === 'run' && state.evaluated) || (s === 'result' && state.evaluated && state.screen === 'analysis'));
+    });
+    const back = $('#backBtn');
+    if (state.view !== 'sim') {
+      const lbl = { start: 'Zum Start', plan: 'Zurück zur Planung', run: state.ended ? 'Zurück zur Auswertung' : 'Zurück zum Arbeitstag', result: 'Zurück zur Auswertung', analysis: 'Zurück zur Prognose' }[state.returnScreen] || 'Zur Simulation';
+      back.textContent = lbl; back.hidden = false;
+    } else back.hidden = true;
+  }
+  function focusHeading(root) {
+    const h = $('h2', root); if (!h) return;
+    h.setAttribute('tabindex', '-1'); try { h.focus({ preventScroll: true }); } catch (e) { h.focus(); }
+  }
+  function showScreen(name, opts) {
     state.screen = name;
     ['start', 'plan', 'result', 'analysis'].forEach(s => { $('#screen-' + s).hidden = s !== name; });
-    $('#hud').classList.toggle('dim', name !== 'run');
+    const hud = $('#hud');
+    hud.classList.toggle('dim', name !== 'run');
+    hud.inert = name !== 'run';
     document.body.classList.toggle('in-run', name === 'run');
     if (name === 'plan') renderPlan();
     if (name === 'analysis') renderAnalysis();
+    updateStepper();
+    setRoute(name, opts && opts.replace);
+    if (name !== 'run') focusHeading($('#screen-' + name));
   }
-  function showView(v) {
+  function showView(v, opts) {
+    const leaving = state.view === 'sim' && v !== 'sim';
+    if (leaving) {
+      state.returnScreen = state.screen;
+      if (state.screen === 'run' && state.playing && !state.ended) { state.playing = false; renderClock(); toast('Arbeitstag pausiert. „Weiter“ oder Leertaste setzt fort.'); }
+    }
     state.view = v;
-    $('#game').hidden = v !== 'game';
+    $('#stage').hidden = v !== 'sim';
     $('#view-levels').hidden = v !== 'levels';
     $('#view-path').hidden = v !== 'path';
-    $('#knowledge-nav').hidden = v === 'game';
-    $$('[data-view]').forEach(b => { if (b.dataset.view === v) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
-    window.Scene3D.setRunning(v === 'game');
-    if (v !== 'game' && state.playing) { state.playing = false; renderClock(); }
+    document.body.classList.toggle('in-run', v === 'sim' && state.screen === 'run');
+    $$('#appbar .nav [data-view]').forEach(b => { if (b.dataset.view === v) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
+    window.Scene3D.setRunning(v === 'sim');
     if (v === 'levels') renderLevelsView();
     if (v === 'path') renderMatrix();
+    updateStepper();
+    setRoute(v === 'sim' ? state.screen : v, opts && opts.replace);
     window.scrollTo({ top: 0 });
+    if (v !== 'sim') focusHeading($('#view-' + v));
+  }
+  function applyRoute() {
+    const h = (location.hash || '').replace('#', '');
+    const key = Object.keys(ROUTES).find(k => ROUTES[k] === h) || 'start';
+    if (key === 'levels' || key === 'path') { showView(key, { replace: true }); return; }
+    if (state.view !== 'sim') showView('sim', { replace: true });
+    if (key === 'run') { if (state.screen === 'run') return; showScreen(state.evaluated ? 'result' : 'plan', { replace: true }); return; }
+    if (key === 'result' && !state.evaluated) { showScreen('plan', { replace: true }); return; }
+    if (state.screen !== key) showScreen(key, { replace: true });
+  }
+
+  /* In-Page-Bestätigung (Browserdialoge stehen nicht überall zur Verfügung). */
+  function ask(msg) {
+    return new Promise(resolve => {
+      const box = $('#confirm'); $('#confirmMsg').textContent = msg; box.hidden = false;
+      const done = v => { box.hidden = true; $('#confirmYes').onclick = $('#confirmNo').onclick = null; resolve(v); };
+      $('#confirmYes').onclick = () => done(true); $('#confirmNo').onclick = () => done(false);
+      $('#confirmYes').focus();
+    });
   }
 
   /* ---------- Planung ---------- */
@@ -140,8 +196,10 @@
     $('#budgetDesc').textContent = BUDGETS[state.budgetIdx].desc;
     $('#budgetBar').style.width = Math.min(100, sp / b * 100) + '%';
     $('#budgetText').innerHTML = '<b>' + sp + '</b> von ' + b + ' Punkten eingesetzt · ' + (b - sp) + ' frei';
-    $('#baseToggle').setAttribute('aria-pressed', state.useAssessment);
-    $('#baseToggle').textContent = state.useAssessment ? 'Ausgangslage: Ihre Einschätzung' : 'Ausgangslage: alles auf Stufe 1';
+    $$('#baseSeg button').forEach(b => b.setAttribute('aria-pressed', (b.dataset.base === 'assess') === state.useAssessment));
+    $('#baseAssessBtn').disabled = !state.assessed;
+    $('#baseHint').innerHTML = state.useAssessment ? 'Vorhandene Stufen aus Ihrer Standortbestimmung kosten kein Budget.' : (state.assessed ? 'Ihre Standortbestimmung liegt vor und kann als Ausgangslage dienen.' : 'Noch keine Standortbestimmung. <button type="button" class="linkbtn" data-view="path">Standort bestimmen</button>');
+    $('#varyBtn').checked = !!state.vary;
 
     let html = '<thead><tr><th>Handlungsfeld</th>' + LEVELS.map(l => '<th class="lv">Stufe ' + l.n + '<small>' + l.name + '</small></th>').join('') + '</tr></thead><tbody>';
     FIELDS.forEach(f => {
@@ -253,7 +311,7 @@
       if (state.sim >= DAY_END) { state.sim = DAY_END; state.ended = true; state.playing = false; }
       update();
     }
-    if (state.view === 'game') window.Scene3D.setTime(state.screen === 'run' ? state.sim : 10 * 60 + (ts / 400) % (8 * 60));
+    if (state.view === 'sim') window.Scene3D.setTime(state.screen === 'run' ? state.sim : 10 * 60 + (ts / 400) % (8 * 60));
     requestAnimationFrame(loop);
   }
 
@@ -352,7 +410,8 @@
       };
       return '<tr><td>' + label + '</td><td class="cur">' + fmt(cur) + '</td>' + cell(bs) + cell(pv) + '</tr>';
     };
-    $('#resultHero').innerHTML = '<div class="eyebrow">Feierabend</div><div class="hero-num">' + t.index + '<small>Experience-Index</small></div>' +
+    state.evaluated = true;
+    $('#resultHero').innerHTML = '<div class="eyebrow">Schritt 3 · Auswertung</div><div class="hero-num">' + t.index + '<small>Experience-Index</small></div>' +
       '<p class="muted">' + (t.prevented + t.auto) + ' von ' + t.events.length + ' Ereignissen wurden verhindert oder autonom gelöst, ' + t.tickets + ' wurden zum Ticket. Budget: ' + spent() + ' von ' + budget() + ' Punkten.</p>';
     $('#resultTable').innerHTML = '<thead><tr><th>Kennzahl</th><th>Dieser Durchlauf</th><th>Ohne Investition</th><th>Letzter Durchlauf</th></tr></thead><tbody>' +
       row('Experience-Index', x => x.index, v => v, false) +
@@ -413,7 +472,7 @@
       '<div class="kpis">' + Object.keys(KPI_LABELS).map(k => '<div class="tile"><div class="lbl">' + KPI_LABELS[k] + '</div><div class="val">' + l.kpi[k] + '</div></div>').join('') + '</div>' +
       '<p class="note" style="margin-top:8px">Typische Richtwerte zur Orientierung, keine Benchmarks.</p>' +
       '<h3 style="margin-top:18px">So fühlt sich diese Stufe an</h3><div class="quotes" style="margin-top:8px">' + ['ma', 'it', 'mgmt'].map(k => '<div class="quote"><div class="who">' + PERSPECTIVE_LABELS[k] + '</div><p>„' + esc(q[k]) + '“</p></div>').join('') + '</div>' +
-      '<div class="actions"><button class="btn primary" type="button" data-play-level="' + lv + '">Diesen Tag in der Simulation erleben</button></div>';
+      '<div class="actions"><button class="btn primary" type="button" data-play-level="' + lv + '">Alle Felder auf Stufe ' + lv + ' in die Planung übernehmen</button></div>';
     const series = [{ k: 'it', cap: 'IT-Aufwand in Stunden', unit: 'h' }, { k: 'user', cap: 'Ausfallzeit der Mitarbeiter in Stunden', unit: 'h' }, { k: 'tickets', cap: 'Tickets', unit: 'Tickets' }];
     $('#multiples').innerHTML = series.map(sr => {
       const vals = TOTALS.map(t => sr.k === 'tickets' ? t[sr.k] : t[sr.k] / 60);
@@ -428,7 +487,7 @@
     }).join('');
   }
 
-  /* ---------- Wissensseite: Ihr Weg ---------- */
+  /* ---------- Wissensseite: Standortbestimmung ---------- */
   const avgLevel = () => FIELDS.reduce((a, f) => a + (state.assessment[f.id] || 1), 0) / FIELDS.length;
   const minLevel = () => Math.min.apply(null, FIELDS.map(f => state.assessment[f.id] || 1));
   function renderMatrix() {
@@ -458,7 +517,10 @@
       '<p class="muted small" style="margin-top:6px">Durchschnitt über sieben Handlungsfelder. Wirksam wird Automatisierung erst, wenn das schwächste Feld mitzieht: ' + (bottleneck.length === FIELDS.length ? 'alle Felder stehen auf Stufe ' + mn + '.' : '<b>' + bottleneck.map(b => b.name).join(', ') + '</b> auf Stufe ' + mn + '.') + '</p>' +
       '<div class="fieldbars">' + FIELDS.map(f => { const v = state.assessment[f.id] || 1; return '<div class="fieldbar' + (v === mn && bottleneck.length < FIELDS.length ? ' bottleneck' : '') + '"><div class="nm">' + f.name + '</div><div class="seg">' + [1, 2, 3, 4, 5].map(n => '<i class="' + (n <= v ? 'on' : '') + (n <= tgt && n > v ? ' target' : '') + '"></i>').join('') + '</div><div class="v">' + v + ' → ' + tgt + '</div></div>'; }).join('') + '</div>' +
       '<div class="actions"><button class="btn primary" type="button" data-play-assessment>Als Ausgangslage in die Simulation übernehmen</button><button class="btn" type="button" data-copy>Ergebnis kopieren</button><button class="btn" type="button" data-reset-assess>Zurücksetzen</button></div>';
-    $('[data-play-assessment]', box).onclick = () => { state.useAssessment = true; store.set('zt.useAssessment', true); applyBase(); showView('game'); showScreen('plan'); toast('Ausgangslage übernommen. Verteilen Sie jetzt Ihr Budget.'); };
+    $('[data-play-assessment]', box).onclick = async () => {
+      if (spent() > 0 && !(await ask('Die aktuelle Planung wird durch die Standortbestimmung als Ausgangslage ersetzt. Fortfahren?'))) return;
+      state.useAssessment = true; store.set('zt.useAssessment', true); applyBase(); showView('sim'); showScreen('plan'); toast('Ausgangslage übernommen. Weiter mit „Arbeitstag starten“.');
+    };
     $('[data-copy]', box).onclick = copyResult;
     $('[data-reset-assess]', box).onclick = () => { FIELDS.forEach(f => { state.assessment[f.id] = 2; }); state.assessed = false; store.set('zt.assessment', state.assessment); store.set('zt.assessed', false); renderMatrix(); toast('Einschätzung zurückgesetzt'); };
   }
@@ -473,7 +535,7 @@
   function renderPhases() {
     const phases = roadmap(), box = $('#phases');
     if (!phases.length) { box.innerHTML = '<div class="panel"><h3>Ziel erreicht</h3><p class="muted">Alle Handlungsfelder stehen auf oder über der Zielstufe ' + state.target + '.</p></div>'; return; }
-    box.innerHTML = phases.map((p, i) => '<div class="phase"><div class="num">' + (i + 1) + '<small>Schritt</small></div><div style="min-width:0"><h3>' + esc(p.tr.title) + ' <span class="muted" style="font-weight:400">· auf Stufe ' + p.lv + '</span></h3>' +
+    box.innerHTML = phases.map((p, i) => '<div class="phase"><div class="num">' + (i + 1) + '<small>Etappe</small></div><div style="min-width:0"><h3>' + esc(p.tr.title) + ' <span class="muted" style="font-weight:400">· auf Stufe ' + p.lv + '</span></h3>' +
       '<div class="meta">Typische Dauer ' + p.tr.duration + ' · ' + p.items.length + ' von ' + FIELDS.length + ' Handlungsfeldern betroffen</div><p class="focus">' + esc(p.tr.focus) + '</p>' +
       '<ul>' + p.items.map(it => '<li><span class="f">' + esc(it.field.name) + '</span><span>' + esc(it.text) + '</span></li>').join('') + '</ul>' +
       '<details><summary>Typische Maßnahmen in diesem Schritt</summary><ul>' + p.tr.actions.map(a => '<li>' + esc(a) + '</li>').join('') + '</ul></details>' +
@@ -482,8 +544,8 @@
   function copyResult() {
     let txt = 'Zero-Touch IT Simulator – Standortbestimmung\nReifegrad im Durchschnitt: ' + fmtNum(avgLevel(), 1) + ' von 5, Zielstufe ' + state.target + '\n\nHandlungsfelder heute:\n';
     FIELDS.forEach(f => { txt += '- ' + f.name + ': Stufe ' + (state.assessment[f.id] || 1) + '\n'; });
-    txt += '\nRoadmap:\n';
-    roadmap().forEach((p, i) => { txt += '\nSchritt ' + (i + 1) + ': ' + p.tr.title + ' (auf Stufe ' + p.lv + ', ' + p.tr.duration + ')\n'; p.items.forEach(it => { txt += '  - ' + it.field.name + ': ' + it.text + '\n'; }); txt += '  Erfolgskriterium: ' + p.tr.success + '\n'; });
+    txt += '\nEntwicklungspfad:\n';
+    roadmap().forEach((p, i) => { txt += '\nEtappe ' + (i + 1) + ': ' + p.tr.title + ' (auf Stufe ' + p.lv + ', ' + p.tr.duration + ')\n'; p.items.forEach(it => { txt += '  - ' + it.field.name + ': ' + it.text + '\n'; }); txt += '  Erfolgskriterium: ' + p.tr.success + '\n'; });
     const done = () => toast('Ergebnis in die Zwischenablage kopiert');
     const fail = () => { const ta = document.createElement('textarea'); ta.value = txt; ta.style.position = 'fixed'; ta.style.opacity = '0'; document.body.appendChild(ta); ta.select(); try { document.execCommand('copy'); done(); } catch (e) { toast('Kopieren nicht möglich.'); } ta.remove(); };
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, fail); else fail();
@@ -607,24 +669,41 @@
   function bind() {
     document.addEventListener('click', e => {
       const t = e.target;
+      const home = t.closest('[data-home]'); if (home) { showView('sim'); showScreen('start'); return; }
       const nav = t.closest('[data-view]'); if (nav) { showView(nav.dataset.view); return; }
+      const st = t.closest('[data-step]'); if (st && !st.disabled) {
+        const s = st.dataset.step;
+        if (state.view !== 'sim') showView('sim');
+        if (s === 'run') { if (state.screen === 'run' && !state.ended) return; if (state.screen === 'run' && state.ended) { showScreen('result'); return; } startRun(); endHandled = false; return; }
+        if (s === 'result' && !state.evaluated) return;
+        showScreen(s); return;
+      }
+      const bs = t.closest('[data-base]'); if (bs && !bs.disabled) { state.useAssessment = bs.dataset.base === 'assess'; store.set('zt.useAssessment', state.useAssessment); applyBase(); renderPlan(); return; }
       const fr = t.closest('[data-frame]'); if (fr) { state.frameIdx = parseInt(fr.dataset.frame, 10); store.set('zt.frame', state.frameIdx); renderAnalysis(); return; }
       const bd = t.closest('[data-budget]'); if (bd) { state.budgetIdx = parseInt(bd.dataset.budget, 10); store.set('zt.budget', state.budgetIdx); applyBase(); renderPlan(); return; }
       const inv = t.closest('.inv'); if (inv) { setStage(inv.dataset.field, parseInt(inv.dataset.stage, 10)); return; }
       const sp = t.closest('#speed button'); if (sp) { state.speed = parseInt(sp.dataset.s, 10); $$('#speed button').forEach(b => b.setAttribute('aria-pressed', b === sp)); return; }
       const lvv = t.closest('[data-levelview]'); if (lvv) { state.levelView = parseInt(lvv.dataset.levelview, 10); renderLevelsView(); return; }
-      const pl = t.closest('[data-play-level]'); if (pl) { const n = parseInt(pl.dataset.playLevel, 10); state.useAssessment = false; state.base = allOne(); state.budgetIdx = 3; FIELDS.forEach(f => { state.levels[f.id] = n; }); showView('game'); showScreen('plan'); toast('Alle Felder auf Stufe ' + n + ' gesetzt. Starten Sie den Tag oder passen Sie die Verteilung an.'); return; }
+      const pl = t.closest('[data-play-level]'); if (pl) {
+        const n = parseInt(pl.dataset.playLevel, 10);
+        (async () => {
+          if (spent() > 0 && !(await ask('Die aktuelle Planung wird ersetzt: alle Felder auf Stufe ' + n + '. Fortfahren?'))) return;
+          state.useAssessment = false; state.base = allOne(); state.budgetIdx = 3; FIELDS.forEach(f => { state.levels[f.id] = n; }); store.set('zt.levels', state.levels);
+          showView('sim'); showScreen('plan'); toast('Alle Felder auf Stufe ' + n + ' gesetzt. Weiter mit „Arbeitstag starten“.');
+        })();
+        return;
+      }
       const cell = t.closest('.cell'); if (cell) { state.assessment[cell.dataset.afield] = parseInt(cell.dataset.astage, 10); state.assessed = true; store.set('zt.assessment', state.assessment); store.set('zt.assessed', true); renderMatrix(); return; }
       const tg = t.closest('[data-target]'); if (tg) { state.target = parseInt(tg.dataset.target, 10); store.set('zt.target', state.target); renderMatrix(); return; }
     });
     $('#startBtn').addEventListener('click', () => showScreen('plan'));
     $('#analysisBtn').addEventListener('click', () => showScreen('analysis'));
     $('#resultAnalysisBtn').addEventListener('click', () => { endHandled = true; showScreen('analysis'); });
-    $('#analysisBack').addEventListener('click', () => showScreen('plan'));
+    $('#analysisBack').addEventListener('click', () => showScreen(state.evaluated && state.returnScreen === 'result' ? 'result' : 'plan'));
     $('#paramsToggle').addEventListener('click', () => { const p = $('#paramsPanel'); p.hidden = !p.hidden; $('#paramsToggle').setAttribute('aria-expanded', !p.hidden); });
-    $('#varyBtn').addEventListener('click', () => { state.vary = !state.vary; store.set('zt.vary', state.vary); $('#varyBtn').setAttribute('aria-pressed', state.vary); toast(state.vary ? 'Jeder Durchlauf wählt Ereignisse, Zeiten und Aufwände zufällig.' : 'Jeder Durchlauf zeigt denselben Referenztag.'); });
+    $('#varyBtn').addEventListener('change', e => { state.vary = e.target.checked; store.set('zt.vary', state.vary); toast(state.vary ? 'Jeder Durchlauf wählt Ereignisse, Zeiten und Aufwände zufällig.' : 'Jeder Durchlauf zeigt denselben Referenztag.'); });
     $('#adoptRoadBtn').addEventListener('click', () => { if (!lastRoad || !lastRoad.steps.length) return; adoptLevels(lastRoad.end); showScreen('plan'); toast('Roadmap übernommen: ' + lastRoad.steps.length + ' Schritte in der Planung gesetzt.'); });
-    $('#adoptStepBtn').addEventListener('click', () => { if (!lastRoad || !lastRoad.steps.length) return; adoptLevels(lastRoad.steps[0].levels); renderAnalysis(); toast('Erster Schritt übernommen. Die Prognose geht jetzt von der neuen Ausgangslage aus.'); });
+    $('#adoptStepBtn').addEventListener('click', () => { if (!lastRoad || !lastRoad.steps.length) return; adoptLevels(lastRoad.steps[0].levels); renderAnalysis(); toast('Erster Schritt steht jetzt in der Planung. Die Prognose geht von der neuen Ausgangslage aus.'); });
     $('#roadRunBtn').addEventListener('click', () => { if (!lastRoad || !lastRoad.steps.length) return; adoptLevels(lastRoad.end); endHandled = false; startRun(); });
     document.addEventListener('input', e => {
       const p = e.target.dataset && e.target.dataset.param;
@@ -634,11 +713,13 @@
     });
     $('#runBtn').addEventListener('click', () => { if (spent() === 0 && !state.useAssessment) toast('Ohne Investition läuft der Tag auf Stufe 1. Gut als Vergleich.'); startRun(); endHandled = false; });
     $('#resetPlanBtn').addEventListener('click', () => { state.levels = Object.assign({}, state.base); store.set('zt.levels', state.levels); renderPlan(); });
-    $('#baseToggle').addEventListener('click', () => { state.useAssessment = !state.useAssessment; store.set('zt.useAssessment', state.useAssessment); applyBase(); renderPlan(); });
     $('#playBtn').addEventListener('click', () => { if (state.ended) return; state.playing = !state.playing; renderClock(); });
     $('#skipBtn').addEventListener('click', () => { state.sim = DAY_END; state.ended = true; state.playing = false; update(); });
-    $('#stopBtn').addEventListener('click', () => { state.playing = false; endHandled = true; showScreen('plan'); });
-    $('#followBtn').addEventListener('click', () => { state.follow = !state.follow; window.Scene3D.setFollow(state.follow); $('#followBtn').setAttribute('aria-pressed', state.follow); });
+    $('#stopBtn').addEventListener('click', async () => {
+      if (!state.ended) { const was = state.playing; state.playing = false; renderClock(); if (!(await ask('Den laufenden Arbeitstag abbrechen und zur Planung zurückkehren?'))) { state.playing = was; renderClock(); return; } }
+      endHandled = true; showScreen('plan');
+    });
+    $('#followBtn').addEventListener('change', e => { state.follow = e.target.checked; window.Scene3D.setFollow(state.follow); });
     $$('.replanBtn').forEach(b => b.addEventListener('click', () => { endHandled = true; showScreen('plan'); }));
     $('#rerunBtn').addEventListener('click', () => { endHandled = false; startRun(); });
     $$('.themeBtn').forEach(b => b.addEventListener('click', () => {
@@ -648,11 +729,14 @@
     }));
     document.addEventListener('keydown', e => {
       if (e.target.matches('input, textarea, select')) return;
-      if (state.view !== 'game' || state.screen !== 'run') return;
+      if (!$('#confirm').hidden) { if (e.key === 'Escape') $('#confirmNo').click(); return; }
+      if (state.view !== 'sim' || state.screen !== 'run') return;
       if (e.key === ' ') { e.preventDefault(); $('#playBtn').click(); }
       else if (e.key === 'ArrowRight') $('#skipBtn').click();
-      else if (e.key === 'Escape') $('#stopBtn').click();
+      else if (e.key === 'Escape') { if (state.playing) $('#playBtn').click(); }
+      else if (e.key === '1' || e.key === '2' || e.key === '4') { const b = $('#speed button[data-s="' + e.key + '"]'); if (b) b.click(); }
     });
+    window.addEventListener('popstate', applyRoute);
     const tip = $('#tooltip');
     document.addEventListener('mousemove', e => {
       const t = e.target.closest && e.target.closest('[data-tip]');
@@ -670,10 +754,11 @@
     if (window.THREE) { try { window.Scene3D.init($('#c3d')); ok = true; } catch (e) { console.error(e); } }
     if (!ok) { $('#webglWarn').hidden = false; const noop = () => {}; window.Scene3D = new Proxy({}, { get: () => noop }); }
     bind();
-    showView('game'); showScreen('start');
     $('#playBtn').innerHTML = ICON.pause + 'Pause';
-    $('#varyBtn').setAttribute('aria-pressed', state.vary);
+    $('#varyBtn').checked = !!state.vary;
+    $('#stage').hidden = false;
     renderPlan();
+    applyRoute();
     requestAnimationFrame(loop);
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
