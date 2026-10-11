@@ -607,43 +607,71 @@
     $('#frameSeg').innerHTML = frames.map((b, i) => '<button type="button" data-frame="' + i + '" aria-pressed="' + (i === frameIndex()) + '"><span class="n">' + b.points + '</span><span class="lbl">' + b.name + '</span></button>').join('');
     if (!$('#p_employees')) renderParams();
     const base = A.summary(L, P, 7);
-    $('#baseChips').innerHTML = FIELDS.map(f => '<span>' + f.name + ' <b>' + L[f.id] + '</b></span>').join('');
+
+    // A · Ausgangslage
+    $('#baseBars').innerHTML = FIELDS.map(f => '<div class="fieldbar"><div class="nm">' + f.name + '</div><div class="seg">' + [1, 2, 3, 4, 5].map(n => '<i class="' + (n <= L[f.id] ? 'on' : '') + '"></i>').join('') + '</div><div class="v">Stufe ' + L[f.id] + ' · ' + esc(f.short[L[f.id] - 1]) + '</div></div>').join('');
     const tile = (l, v, rng) => '<div class="tile"><div class="lbl">' + l + '</div><div class="val">' + v + '</div>' + (rng ? '<div class="rng">' + rng + '</div>' : '') + '</div>';
     $('#baseTiles').innerHTML =
       tile('Vorfälle und Anfragen je Jahr', fmtNum(Math.round(base.exp.occurrences)), fmtNum(Math.round(base.occurrences.p10)) + ' – ' + fmtNum(Math.round(base.occurrences.p90))) +
       tile('IT-Aufwand je Jahr', fmtNum(Math.round(base.exp.it / 60)) + ' h', fmtNum(Math.round(base.it.p10 / 60)) + ' – ' + fmtNum(Math.round(base.it.p90 / 60)) + ' h') +
       tile('Ausfallzeit je Jahr', fmtNum(Math.round(base.exp.user / 60)) + ' h', fmtNum(Math.round(base.user.p10 / 60)) + ' – ' + fmtNum(Math.round(base.user.p90 / 60)) + ' h') +
       tile('Tickets je Jahr', fmtNum(Math.round(base.exp.tickets)), fmtNum(Math.round(base.tickets.p10)) + ' – ' + fmtNum(Math.round(base.tickets.p90))) +
-      tile('Kosten je Jahr', fmtEur(base.exp.cost), fmtEur(base.cost.p10) + ' – ' + fmtEur(base.cost.p90));
+      tile('Kosten je Jahr', fmtEur(base.exp.cost), fmtEur(base.cost.p10) + ' – ' + fmtEur(base.cost.p90)) +
+      tile('Verhindert oder autonom', fmtNum(Math.round(base.exp.prevented)) + ' <small>von ' + fmtNum(Math.round(base.exp.occurrences)) + '</small>');
 
+    // B · Abhängigkeitsmatrix
+    const vs = A.variants(L);
+    $('#depTable').innerHTML = '<thead><tr><th>Ereignis</th>' + FIELDS.map(f => '<th>' + f.name.replace(' & ', '<br>& ').replace(', ', '<br>') + '</th>').join('') + '<th>läuft heute auf</th></tr></thead><tbody>' +
+      vs.map(x => '<tr><td>' + esc(x.e.title) + '</td>' + FIELDS.map(f => {
+        if (f.id === 'org') return '<td><span class="dot org" title="Organisation begrenzt jedes Ereignis"></span></td>';
+        if (!x.e.fields.includes(f.id)) return '<td></td>';
+        return '<td><span class="dot' + (x.limiters.includes(f.id) ? ' weak' : '') + '" title="' + esc(f.name + ' Stufe ' + L[f.id] + (x.limiters.includes(f.id) ? ' (begrenzt)' : '')) + '"></span></td>';
+      }).join('') + '<td>Stufe ' + x.level + ' · ' + outcomeOf(x.v) + '<br>begrenzt durch ' + x.limiters.map(fieldName).join(', ') + '</td></tr>').join('') +
+      '</tbody>';
+    $('#depTable').insertAdjacentHTML('beforeend', '<tfoot><tr><td colspan="' + (FIELDS.length + 2) + '" style="text-align:left;color:var(--fg-3);font-size:.72rem"><span class="dot" style="width:9px;height:9px"></span> beteiligtes Feld · <span class="dot weak" style="width:9px;height:9px"></span> begrenzt das Ereignis heute · <span class="dot org" style="width:9px;height:9px"></span> Organisation begrenzt immer</td></tr></tfoot>');
+
+    // C · Maßnahmenkarten
     const cands = A.candidates(L, P, base);
     const lo = Math.min(0, Math.min.apply(null, cands.map(c => c.savingMC.p10)));
     const hi = Math.max(1, Math.max.apply(null, cands.map(c => c.savingMC.p90)));
     const bestRatio = Math.max.apply(null, cands.filter(c => !c.blocker).map(c => c.ratio));
-    $('#candTable').innerHTML = '<thead><tr><th>Maßnahme</th><th>Investition</th><th>Ersparnis je Jahr</th><th>Bandbreite</th><th>Nettonutzen je Jahr</th><th>Nutzen je € Invest</th><th>Amortisation</th><th style="text-align:left">Wirkung</th></tr></thead><tbody>' +
-      cands.map(c => {
-        const eff = c.changes.length ? c.changes.length + ' Ereignistyp' + (c.changes.length > 1 ? 'en' : '') + ' auf Stufe ' + c.changes[0].to + ': ' + c.changes.map(x => x.title).join('; ') : 'allein keine Wirkung';
-        const unl = c.unlocks.length ? '<small>schaltet frei: ' + c.unlocks.join(', ') + '</small>' : '';
-        const pair = c.pair && c.pair.net > c.net + 1 ? '<small>zusammen mit ' + c.pair.field.name + ' auf Stufe ' + c.pair.stage + ' (' + c.pair.points + ' P): Nettonutzen ' + fmtEur(c.pair.net) + '/Jahr</small>' : '';
-        const blk = c.blocker ? '<small>' + esc(c.blocker) + '</small>' : '';
-        return '<tr class="' + (c.blocker ? 'locked' : (c.ratio === bestRatio && c.ratio > 0 ? 'top' : '')) + '"><td class="name">' + c.field.name + ' auf Stufe ' + c.stage + '<small>' + esc(c.title) + '</small>' + blk + '</td>' +
-          '<td>' + c.cost.points + ' P<small>' + fmtEur(c.cost.invest) + ' + ' + fmtEur(c.cost.opex) + '/Jahr</small></td>' +
-          '<td>' + fmtEur(c.saving) + '</td><td>' + rangeBar(c.savingMC, lo, hi) + '</td>' +
-          '<td>' + fmtEur(c.net) + '</td><td>' + fmtNum(c.ratio, 2) + '</td><td>' + fmtMonths(c.payback) + '</td>' +
-          '<td style="text-align:left;max-width:300px"><span class="small">' + esc(eff) + '</span>' + pair + unl + '</td></tr>';
-      }).join('') + '</tbody>';
+    $('#candCards').innerHTML = cands.map(c => {
+      const cur = L[c.field.id];
+      const top = !c.blocker && c.ratio === bestRatio && c.ratio > 0;
+      const badge = c.blocker ? '<span class="badge lock">gesperrt</span>' : top ? '<span class="badge top">Beste Einzelwirkung</span>' : (c.saving > 0 ? '<span class="badge ok">sofort möglich</span>' : '<span class="badge zero">wirkt erst mit Partner</span>');
+      const fx = [];
+      if (c.blocker) fx.push('<span class="warn">Voraussetzung fehlt: ' + esc(c.blocker) + '.</span>');
+      if (c.changes.length) fx.push('<span>Verändert <b>' + c.changes.length + ' Ereignistyp' + (c.changes.length > 1 ? 'en' : '') + '</b> auf Stufe ' + c.changes[0].to + ': ' + esc(c.changes.map(x => x.title).join('; ')) + '</span>');
+      else fx.push('<span>Allein verändert diese Maßnahme kein Ereignis, weil das jeweilige Partnerfeld oder die Organisation begrenzt.</span>');
+      if (c.pair && c.pair.net > c.net + 1) fx.push('<span class="good">Zusammen mit <b>' + c.pair.field.name + ' auf Stufe ' + c.pair.stage + '</b> (' + c.pair.points + ' P): Nettonutzen ' + fmtEur(c.pair.net) + ' je Jahr.</span>');
+      if (c.unlocks.length) fx.push('<span>Schaltet frei: ' + esc(c.unlocks.join(', ')) + '.</span>');
+      return '<article class="cand' + (c.blocker ? ' locked' : '') + (top ? ' top' : '') + '">' +
+        '<div class="cand-head"><h4>' + c.field.name + '</h4>' + badge + '</div>' +
+        '<div class="seg">' + [1, 2, 3, 4, 5].map(n => '<i class="' + (n <= cur ? 'on' : (n === cur + 1 ? 'next' : '')) + '"></i>').join('') + '</div>' +
+        '<div class="trans"><div class="st"><b>Heute · Stufe ' + cur + '</b>' + esc(c.field.short[cur - 1]) + '</div><span class="arrow" aria-hidden="true">→</span><div class="st next"><b>Maßnahme · Stufe ' + c.stage + '</b>' + esc(c.title) + '</div></div>' +
+        '<div class="nums"><div>Investition<b>' + c.cost.points + ' P · ' + fmtEur(c.cost.invest) + '</b>+ ' + fmtEur(c.cost.opex) + ' je Jahr</div><div>Nettonutzen je Jahr<b>' + fmtEur(c.net) + '</b>' + (c.net > 0 ? 'je € Invest: ' + fmtNum(c.ratio, 2) : '') + '</div><div>Amortisation<b>' + fmtMonths(c.payback) + '</b></div></div>' +
+        '<div><div class="note" style="margin-bottom:3px">Ersparnis je Jahr: ' + fmtEur(c.saving) + '</div>' + rangeBar(c.savingMC, lo, hi) + '</div>' +
+        '<div class="fx">' + fx.join('') + '</div>' +
+        '</article>';
+    }).join('');
 
+    // D · Roadmap
     const road = A.roadmap(L, frames[frameIndex()].points, P);
     lastRoad = road;
     if (!road.steps.length) {
       $('#roadSummary').textContent = 'Innerhalb dieses Rahmens gibt es keine Maßnahme mit positivem Nettonutzen. Erhöhen Sie den Rahmen oder prüfen Sie die Annahmen.';
-      $('#roadTable').innerHTML = ''; $('#roadChart').innerHTML = '';
+      $('#roadList').innerHTML = ''; $('#roadChart').innerHTML = '';
     } else {
       const last = road.steps[road.steps.length - 1];
       const pct = Math.round((1 - last.costAfter / road.startCost) * 100);
       $('#roadSummary').innerHTML = '<b>' + road.steps.length + ' Schritte, ' + road.spent + ' Punkte, ' + fmtEur(last.cumInvest) + ' Investition.</b> Die jährlichen Kosten sinken von ' + fmtEur(road.startCost) + ' auf ' + fmtEur(last.costAfter) + ' (−' + pct + ' %). Nettoersparnis ' + fmtEur(last.cumNet) + ' je Jahr, Amortisation der gesamten Roadmap nach ' + fmtMonths(last.payback) + '.';
-      $('#roadTable').innerHTML = '<thead><tr><th>Nr.</th><th>Maßnahme</th><th>Investition</th><th>Ersparnis dieses Schritts</th><th>Investition kumuliert</th><th>Nettoersparnis je Jahr kumuliert</th><th>Amortisation</th></tr></thead><tbody>' +
-        road.steps.map((s, i) => '<tr class="' + (s.payback <= 12 ? 'pay' : '') + '"><td class="num">' + (i + 1) + '</td><td>' + s.field.name + ' auf Stufe ' + s.stage + '<small>' + esc(s.title) + (s.stepSaving <= 0 ? ' · Voraussetzung für spätere Schritte' : '') + '</small></td><td>' + s.points + ' P<small>' + fmtEur(s.invest) + '</small></td><td>' + fmtEur(s.stepSaving) + '</td><td>' + fmtEur(s.cumInvest) + '</td><td>' + fmtEur(s.cumNet) + '</td><td>' + fmtMonths(s.payback) + '</td></tr>').join('') + '</tbody>';
+      $('#roadList').innerHTML = road.steps.map((s, i) => {
+        const prep = s.stepSaving <= 0;
+        let why;
+        if (prep) { const k = road.steps.findIndex((x, j) => j > i && x.stepSaving > 0); why = k >= 0 ? 'Voraussetzung, wirkt ab Schritt ' + (k + 1) : 'Voraussetzung für weitere Stufen'; }
+        else why = 'spart ' + fmtEur(s.stepSaving) + ' je Jahr';
+        return '<li class="' + (prep ? 'prep' : (s.payback <= 12 ? 'pay' : '')) + '"><span class="rn">' + (i + 1) + '</span><div class="rt">' + s.field.name + ': Stufe ' + (s.stage - 1) + ' → ' + s.stage + ' · ' + esc(s.title) + '<small>' + why + ' · ' + s.points + ' P · ' + fmtEur(s.invest) + '</small></div><div class="rv"><b>' + fmtEur(s.cumNet) + '</b>Nettoersparnis je Jahr nach diesem Schritt<br>Investition bisher ' + fmtEur(s.cumInvest) + ' · Amortisation ' + fmtMonths(s.payback) + '</div></li>';
+      }).join('');
       $('#roadChart').innerHTML = roadChart(road);
     }
   }
@@ -703,7 +731,7 @@
     $('#paramsToggle').addEventListener('click', () => { const p = $('#paramsPanel'); p.hidden = !p.hidden; $('#paramsToggle').setAttribute('aria-expanded', !p.hidden); });
     $('#varyBtn').addEventListener('change', e => { state.vary = e.target.checked; store.set('zt.vary', state.vary); toast(state.vary ? 'Jeder Durchlauf wählt Ereignisse, Zeiten und Aufwände zufällig.' : 'Jeder Durchlauf zeigt denselben Referenztag.'); });
     $('#adoptRoadBtn').addEventListener('click', () => { if (!lastRoad || !lastRoad.steps.length) return; adoptLevels(lastRoad.end); showScreen('plan'); toast('Roadmap übernommen: ' + lastRoad.steps.length + ' Schritte in der Planung gesetzt.'); });
-    $('#adoptStepBtn').addEventListener('click', () => { if (!lastRoad || !lastRoad.steps.length) return; adoptLevels(lastRoad.steps[0].levels); renderAnalysis(); toast('Erster Schritt steht jetzt in der Planung. Die Prognose geht von der neuen Ausgangslage aus.'); });
+    $('#adoptStepBtn').addEventListener('click', () => { if (!lastRoad || !lastRoad.steps.length) return; adoptLevels(lastRoad.steps[0].levels); renderAnalysis(); toast('Schritt 1 steht jetzt in der Planung. Die Prognose geht von der neuen Ausgangslage aus.'); });
     $('#roadRunBtn').addEventListener('click', () => { if (!lastRoad || !lastRoad.steps.length) return; adoptLevels(lastRoad.end); endHandled = false; startRun(); });
     document.addEventListener('input', e => {
       const p = e.target.dataset && e.target.dataset.param;

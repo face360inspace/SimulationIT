@@ -146,8 +146,8 @@
       <div class="plan-head">
         <div>
           <div class="eyebrow">Schritt 4 · Prognose und Roadmap</div>
-          <h2>Maßnahmen bewerten und Roadmap ableiten</h2>
-          <p class="muted">Ausgehend von der aktuellen Konfiguration werden viele zufällig variierte Jahre simuliert: Jeder Ereignistyp tritt mit seiner typischen Häufigkeit auf, Aufwände streuen. Für jede mögliche nächste Maßnahme entstehen Investition, erwartete Ersparnis mit Bandbreite, Nettonutzen und Amortisation. Der Roadmap-Vorschlag wählt Schritt für Schritt die Maßnahme mit dem höchsten Nettonutzen je investiertem Euro und berücksichtigt dabei, dass manche Schritte erst spätere freischalten.</p>
+          <h2>Was bringt welche Maßnahme?</h2>
+          <p class="muted">Die Prognose geht von Ihrer Planung aus und rechnet sie auf Jahre hoch. Eine Maßnahme hebt genau ein Handlungsfeld um eine Stufe. Für jede mögliche Maßnahme sehen Sie, was sie kostet, was sie spart und wovon sie abhängt. Am Ende steht ein Roadmap-Vorschlag.</p>
         </div>
         <div class="budget-box">
           <div class="eyebrow" style="margin-bottom:6px">Investitionsrahmen für die Roadmap</div>
@@ -165,34 +165,53 @@
         <p class="note">Häufigkeiten je 100 Mitarbeiter; Ereignisse mit dem Zusatz „je Unternehmen“ hängen nicht von der Größe ab. Die Abdeckung rechnet die elf Typen auf das gesamte Vorfalls- und Anfrageaufkommen hoch.</p>
       </div>
 
-      <h3 class="sec">Ausgangslage, hochgerechnet auf ein Jahr</h3>
-      <div class="levels-chips" id="baseChips"></div>
-      <div class="tiles five" id="baseTiles"></div>
+      <section class="ana-sec" aria-labelledby="anaBaseH">
+        <div class="ana-sec-head"><span class="ana-num">A</span><div><h3 id="anaBaseH">Ausgangslage: Ihre Planung</h3><p class="note">So steht jedes Handlungsfeld heute. Die Prognose rechnet diese Konfiguration auf ein Jahr hoch.</p></div></div>
+        <div class="ana-base">
+          <div class="fieldbars" id="baseBars"></div>
+          <div class="tiles five" id="baseTiles"></div>
+        </div>
+      </section>
 
-      <h3 class="sec">Einzelne Maßnahmen im Vergleich</h3>
-      <p class="note">Je Handlungsfeld die nächste Stufe, bewertet gegen die Ausgangslage. Der Balken zeigt die Bandbreite der jährlichen Ersparnis (10. bis 90. Perzentil), der Strich den Mittelwert. Nettonutzen berücksichtigt laufende Kosten.</p>
-      <div class="matrix-wrap"><table class="cand-table" id="candTable"></table></div>
+      <section class="ana-sec" aria-labelledby="anaRulesH">
+        <div class="ana-sec-head"><span class="ana-num">B</span><div><h3 id="anaRulesH">So wirken Maßnahmen</h3><p class="note">Drei Regeln bestimmen, ob eine Maßnahme etwas verändert.</p></div></div>
+        <div class="rules">
+          <div class="rule"><b>Schwächstes Feld zählt.</b> Jedes Ereignis hängt an ein bis zwei Handlungsfeldern und läuft auf der Stufe des schwächeren. Eine Maßnahme wirkt erst, wenn das Partnerfeld mitzieht.</div>
+          <div class="rule"><b>Organisation begrenzt.</b> Kein Ereignis läuft mehr als eine Stufe über der Organisation. Ohne Rollen, Prozesse und Automation Engineering bleibt Technik wirkungslos.</div>
+          <div class="rule"><b>Stufen bauen aufeinander auf.</b> Stufe 4 in einem Feld braucht Telemetrie auf Stufe 3. Stufe 5 braucht Telemetrie und Automatisierung auf Stufe 4.</div>
+        </div>
+        <details class="dep-details"><summary>Abhängigkeiten im Detail: welches Ereignis hängt an welchem Feld?</summary>
+          <div class="matrix-wrap" style="margin-top:10px"><table class="dep-table" id="depTable"></table></div>
+        </details>
+      </section>
 
-      <h3 class="sec">Vorgeschlagene Roadmap</h3>
-      <div class="road-grid">
-        <div>
-          <p id="roadSummary" class="muted"></p>
-          <div class="matrix-wrap"><table class="road-table" id="roadTable"></table></div>
-          <div class="actions">
-            <button type="button" class="btn primary" id="adoptRoadBtn">Roadmap in die Planung übernehmen</button>
-            <button type="button" class="btn" id="adoptStepBtn">Nur ersten Schritt übernehmen</button>
-            <button type="button" class="btn ghost" id="roadRunBtn">Arbeitstag mit Zielkonfiguration starten</button>
+      <section class="ana-sec" aria-labelledby="anaCandH">
+        <div class="ana-sec-head"><span class="ana-num">C</span><div><h3 id="anaCandH">Mögliche nächste Maßnahmen</h3><p class="note">Je Handlungsfeld die nächste Stufe, bewertet gegen die Ausgangslage über viele simulierte Jahre. Sortiert nach Nettonutzen je investiertem Euro. Viele Maßnahmen wirken erst als Paar; jede Karte nennt deshalb den besten Partnerschritt. Die Roadmap in Abschnitt D bringt die Paare in die richtige Reihenfolge. Der Balken zeigt die Bandbreite der jährlichen Ersparnis (10. bis 90. Perzentil), der Strich den Mittelwert.</p></div></div>
+        <div class="cands" id="candCards"></div>
+      </section>
+
+      <section class="ana-sec" aria-labelledby="anaRoadH">
+        <div class="ana-sec-head"><span class="ana-num">D</span><div><h3 id="anaRoadH">Roadmap-Vorschlag</h3><p class="note">Der Optimierer wählt Schritt für Schritt die Maßnahme mit dem höchsten Nettonutzen je Euro und schaut bis zu drei Schritte voraus. Deshalb stehen auch Schritte darin, die allein nichts bringen, aber spätere ermöglichen.</p></div></div>
+        <div class="road-grid">
+          <div>
+            <p id="roadSummary" class="road-summary"></p>
+            <ol class="road" id="roadList"></ol>
+            <div class="actions">
+              <button type="button" class="btn primary" id="adoptRoadBtn">Roadmap in die Planung übernehmen</button>
+              <button type="button" class="btn" id="adoptStepBtn">Nur Schritt 1 übernehmen</button>
+              <button type="button" class="btn ghost" id="roadRunBtn">Arbeitstag mit Zielkonfiguration starten</button>
+            </div>
+            <div class="actions"><button type="button" class="btn" id="analysisBack">Zurück zur Planung</button></div>
           </div>
-          <div class="actions"><button type="button" class="btn" id="analysisBack">Zurück zur Planung</button></div>
+          <div class="chart-card">
+            <h3>Investition und Nettoersparnis je Jahr, kumuliert</h3>
+            <p class="sub">Je Schritt der Roadmap. Wo die blaue Linie über der orangen liegt, hat sich die Roadmap innerhalb eines Jahres bezahlt gemacht.</p>
+            <div class="legend" style="margin-bottom:6px"><span><i class="dot-human"></i>Investition kumuliert</span><span><i class="dot-auto"></i>Nettoersparnis je Jahr, kumuliert</span></div>
+            <div id="roadChart"></div>
+            <p class="note" style="margin-top:8px">Methodik: Erwartungswerte aus Häufigkeit × Aufwand je Stufe, Bandbreiten aus Monte-Carlo-Simulation. Alle Werte sind Modellannahmen, keine Zusagen.</p>
+          </div>
         </div>
-        <div class="chart-card">
-          <h3>Investition und Nettoersparnis je Jahr, kumuliert</h3>
-          <p class="sub">Je Schritt der Roadmap. Wo die Ersparnis über der Investition liegt, hat sich die Roadmap innerhalb eines Jahres bezahlt gemacht.</p>
-          <div class="legend" style="margin-bottom:6px"><span><i class="dot-human"></i>Investition kumuliert</span><span><i class="dot-auto"></i>Nettoersparnis je Jahr, kumuliert</span></div>
-          <div id="roadChart"></div>
-          <p class="note" style="margin-top:8px">Methodik: Erwartungswerte aus Häufigkeit × Aufwand je Stufe, Bandbreiten aus Monte-Carlo-Simulation. Alle Werte sind Modellannahmen, keine Zusagen.</p>
-        </div>
-      </div>
+      </section>
     </div>
   </section>
 </div>
