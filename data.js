@@ -19,6 +19,8 @@
    `touches` = manuelle Eingriffe der IT (inkl. Freigaben)
    `ticket`  = entsteht ein Ticket bzw. eine Anfrage, die jemand bearbeitet
    `prevented` = Störung wurde verhindert, bevor jemand sie bemerkt hat
+   `freq`    = typische Häufigkeit je Monat und 100 Mitarbeiter, bei
+               `perCompany` je Unternehmen; Grundlage der Prognose
    Alle Zahlen sind illustrative Richtwerte, keine Benchmarks.
    ========================================================================= */
 
@@ -238,7 +240,7 @@ const T = (h, m) => h * 60 + (m || 0);
    w = optionaler Hinweis, der während des Wartens angezeigt wird. */
 const EVENTS = [
   {
-    id: 'onboarding', start: T(7, 30), fields: ['identity', 'endpoint'],
+    id: 'onboarding', start: T(7, 30), freq: 1.2, fields: ['identity', 'endpoint'],
     title: 'Neuer Mitarbeiter: Jonas Weber startet heute im Controlling',
     v: [
       {
@@ -293,7 +295,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'erp', start: T(7, 50), fields: ['automation', 'telemetry'],
+    id: 'erp', start: T(7, 50), freq: 0.5, perCompany: true, fields: ['automation', 'telemetry'],
     title: 'ERP-Client-Update verursacht Abstürze',
     startByLevel: { 3: T(16, 30), 4: T(16, 30), 5: T(16, 30) },
     v: [
@@ -349,7 +351,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'ssd', start: T(8, 10), fields: ['endpoint', 'service'],
+    id: 'ssd', start: T(8, 10), freq: 1.5, fields: ['endpoint', 'service'],
     title: 'SSD-Verschleiß auf dem Notebook von Anna Berger (Vertrieb)',
     v: [
       {
@@ -412,7 +414,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'cve', start: T(9, 5), fields: ['security', 'automation'],
+    id: 'cve', start: T(9, 5), freq: 1.5, perCompany: true, fields: ['security', 'automation'],
     title: 'Kritische Schwachstelle im Browser, aktiv ausgenutzt',
     v: [
       {
@@ -468,7 +470,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'storage', start: T(10, 20), fields: ['telemetry', 'automation'],
+    id: 'storage', start: T(10, 20), freq: 0.5, perCompany: true, fields: ['telemetry', 'automation'],
     title: 'Fileshare „Projekte“ läuft voll',
     v: [
       {
@@ -524,7 +526,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'license', start: T(11, 0), fields: ['service', 'automation'],
+    id: 'license', start: T(11, 0), freq: 6, fields: ['service', 'automation'],
     title: 'Lizenzanfrage: Mehmet Yilmaz braucht Visio',
     v: [
       {
@@ -579,7 +581,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'login', start: T(12, 30), fields: ['security', 'identity'],
+    id: 'login', start: T(12, 30), freq: 0.5, fields: ['security', 'identity'],
     title: 'Verdächtige Anmeldung: Konto von Petra Lang aus Lagos, zwei Minuten nach München',
     v: [
       {
@@ -634,7 +636,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'wlan', start: T(13, 15), fields: ['telemetry', 'automation'],
+    id: 'wlan', start: T(13, 15), freq: 0.6, fields: ['telemetry', 'automation'],
     title: 'WLAN im Besprechungsraum „Alpen“ bricht während eines Workshops ein',
     startByLevel: { 4: T(7, 45), 5: T(7, 45) },
     v: [
@@ -689,7 +691,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'mfa', start: T(14, 0), fields: ['identity', 'service'],
+    id: 'mfa', start: T(14, 0), freq: 1.5, fields: ['identity', 'service'],
     title: 'MFA-Gerät verloren: Sven Hartmann hat sein Smartphone im Zug vergessen',
     v: [
       {
@@ -741,7 +743,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'teams', start: T(15, 10), fields: ['telemetry', 'automation'],
+    id: 'teams', start: T(15, 10), freq: 0.5, perCompany: true, fields: ['telemetry', 'automation'],
     title: 'Teams-Anrufqualität sinkt für 40 Mitarbeiter im Kundenservice',
     v: [
       {
@@ -794,7 +796,7 @@ const EVENTS = [
     ]
   },
   {
-    id: 'offboarding', start: T(16, 0), fields: ['identity'],
+    id: 'offboarding', start: T(16, 0), freq: 1.0, fields: ['identity'],
     title: 'Austritt: Claudia Fischer verlässt heute das Unternehmen',
     v: [
       {
@@ -881,3 +883,23 @@ function effectiveLevel(ev, levels) {
   if (levels.org + 1 === lv && lv < 5) limiters.push('org');
   return { level: lv, limiters: limiters };
 }
+
+/* ---------- Prognose: Annahmen ---------- */
+/* Alle Werte sind in der Analyse änderbar. Geldwerte in Euro. */
+const PARAMS = {
+  employees: 300,       // Mitarbeiter im Unternehmen
+  coverage: 0.25,       // Anteil des Vorfalls- und Anfrageaufkommens, den die elf Ereignistypen abbilden (Hochrechnung)
+  workdays: 250,        // Arbeitstage je Jahr
+  rateIT: 75,           // Kosten je Stunde IT-Arbeitszeit
+  rateUser: 60,         // Kosten je Stunde Produktivitätsverlust
+  ticketCost: 15,       // Bearbeitungskosten je Ticket (Erfassung, Kommunikation)
+  eurPerPoint: 15000,   // Einmalinvestition je Budgetpunkt
+  opexShare: 0.2,       // laufende Kosten je Jahr, Anteil der Investition
+  runs: 200,            // simulierte Jahre je Konfiguration
+  spread: 0.4           // Streuung der Aufwände je Vorkommen (±40 %)
+};
+const PARAM_LABELS = {
+  employees: ['Mitarbeiter', ''], coverage: ['Abdeckung durch die elf Ereignistypen', '%'], workdays: ['Arbeitstage je Jahr', ''],
+  rateIT: ['Kosten je IT-Stunde', '€'], rateUser: ['Kosten je Ausfallstunde', '€'], ticketCost: ['Bearbeitungskosten je Ticket', '€'],
+  eurPerPoint: ['Investition je Budgetpunkt', '€'], opexShare: ['Laufende Kosten je Jahr', '% der Investition'], runs: ['Simulierte Jahre', ''], spread: ['Streuung der Aufwände', '±%']
+};

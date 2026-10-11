@@ -26,8 +26,13 @@
     speed: 1, playing: false, ended: false, sim: DAY_START, day: null,
     follow: true, runs: [], levelView: 3,
     assessment: store.get('zt.assessment', null), assessed: store.get('zt.assessed', false),
-    target: store.get('zt.target', 5)
+    target: store.get('zt.target', 5),
+    params: Object.assign({}, PARAMS, store.get('zt.params', {})),
+    frameIdx: store.get('zt.frame', null),
+    vary: store.get('zt.vary', false),
+    runCount: 0
   };
+  (function () { const fo = store.get('zt.freq', {}); EVENTS.forEach(e => { if (typeof fo[e.id] === 'number') e.freq = fo[e.id]; }); })();
   if (!state.assessment) { state.assessment = {}; FIELDS.forEach(f => { state.assessment[f.id] = 2; }); }
   const savedLevels = store.get('zt.levels', null);
 
@@ -108,10 +113,11 @@
   /* ---------- Bildschirme ---------- */
   function showScreen(name) {
     state.screen = name;
-    ['start', 'plan', 'result'].forEach(s => { $('#screen-' + s).hidden = s !== name; });
+    ['start', 'plan', 'result', 'analysis'].forEach(s => { $('#screen-' + s).hidden = s !== name; });
     $('#hud').classList.toggle('dim', name !== 'run');
     document.body.classList.toggle('in-run', name === 'run');
     if (name === 'plan') renderPlan();
+    if (name === 'analysis') renderAnalysis();
   }
   function showView(v) {
     state.view = v;
@@ -167,11 +173,18 @@
   }
 
   /* ---------- Simulationstag ---------- */
+  function seededRandom(seed) { let x = seed >>> 0; return () => { x = (x + 0x6D2B79F5) >>> 0; let t = x; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
   function buildDay() {
-    const items = EVENTS.map(def => {
+    const rand = seededRandom(1000 + state.runCount * 7919);
+    const items = EVENTS.filter(() => !state.vary || rand() < 0.75).map(def => {
       const eff = effectiveLevel(def, state.levels);
-      const v = def.v[eff.level - 1];
-      const start = (def.startByLevel && def.startByLevel[eff.level]) || def.start;
+      let v = def.v[eff.level - 1];
+      let start = (def.startByLevel && def.startByLevel[eff.level]) || def.start;
+      if (state.vary) {
+        const f = 1 - state.params.spread + rand() * 2 * state.params.spread;
+        v = Object.assign({}, v, { it: Math.round(v.it * f), user: Math.round(v.user * f) });
+        start = Math.max(DAY_START + 15, Math.min(DAY_END - 90, Math.round(start + (rand() - .5) * 120)));
+      }
       let acc = start;
       const steps = v.steps.map(s => { const at = acc; acc += s.d; return Object.assign({}, s, { at }); });
       return { def, v, level: eff.level, limiters: eff.limiters, start, steps, endAt: acc, shown: 0, started: false, finished: false, el: null, blocked: false };
@@ -181,6 +194,7 @@
   }
 
   function startRun() {
+    state.runCount++;
     state.day = buildDay();
     state.sim = DAY_START; state.ended = false; state.playing = true;
     $('#feed').innerHTML = '';
@@ -317,8 +331,14 @@
   }
 
   /* ---------- Auswertung ---------- */
+  function dayTotals(day) {
+    const t = { it: 0, user: 0, touches: 0, tickets: 0, prevented: 0, auto: 0, events: [] };
+    day.forEach(i => { t.it += i.v.it; t.user += i.v.user; t.touches += i.v.touches; if (i.v.ticket) t.tickets++; if (i.v.prevented) t.prevented++; else if (i.v.touches === 0) t.auto++; t.events.push({ def: i.def, level: i.level, limiters: i.limiters, v: i.v }); });
+    t.index = experienceIndex(t.user, t.tickets, t.touches);
+    return t;
+  }
   function showResult() {
-    const t = totalsFor(state.levels);
+    const t = state.vary ? dayTotals(state.day) : totalsFor(state.levels);
     const baseT = totalsFor(state.base);
     const prev = state.runs.length ? state.runs[state.runs.length - 1] : null;
     state.runs.push({ levels: Object.assign({}, state.levels), budget: budget(), totals: t });
@@ -333,7 +353,7 @@
       return '<tr><td>' + label + '</td><td class="cur">' + fmt(cur) + '</td>' + cell(bs) + cell(pv) + '</tr>';
     };
     $('#resultHero').innerHTML = '<div class="eyebrow">Feierabend</div><div class="hero-num">' + t.index + '<small>Experience-Index</small></div>' +
-      '<p class="muted">' + (t.prevented + t.auto) + ' von ' + EVENTS.length + ' Ereignissen wurden verhindert oder autonom gelöst, ' + t.tickets + ' wurden zum Ticket. Budget: ' + spent() + ' von ' + budget() + ' Punkten.</p>';
+      '<p class="muted">' + (t.prevented + t.auto) + ' von ' + t.events.length + ' Ereignissen wurden verhindert oder autonom gelöst, ' + t.tickets + ' wurden zum Ticket. Budget: ' + spent() + ' von ' + budget() + ' Punkten.</p>';
     $('#resultTable').innerHTML = '<thead><tr><th>Kennzahl</th><th>Dieser Durchlauf</th><th>Ohne Investition</th><th>Letzter Durchlauf</th></tr></thead><tbody>' +
       row('Experience-Index', x => x.index, v => v, false) +
       row('IT-Aufwand', x => x.it, fmtHours, true) +
@@ -469,6 +489,112 @@
     if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(done, fail); else fail();
   }
 
+
+  /* ---------- Prognose & Roadmap ---------- */
+  const fmtEur = n => (Math.abs(n) >= 1e6 ? fmtNum(n / 1e6, 2) + ' Mio. €' : fmtNum(Math.round(n)) + ' €');
+  const fmtMonths = m => !isFinite(m) ? 'nie' : (m < 1 ? '< 1 Monat' : m < 24 ? fmtNum(m, 0) + ' Monate' : fmtNum(m / 12, 1) + ' Jahre');
+  const PCT_PARAMS = { coverage: 1, opexShare: 1, spread: 1 };
+  let analysisTimer = null;
+
+  function frameIndex() { return state.frameIdx === null ? state.budgetIdx : state.frameIdx; }
+
+  function renderParams() {
+    $('#paramsGrid').innerHTML = Object.keys(PARAM_LABELS).map(k => {
+      const v = PCT_PARAMS[k] ? Math.round(state.params[k] * 100) : state.params[k];
+      return '<label>' + PARAM_LABELS[k][0] + (PARAM_LABELS[k][1] ? ' (' + PARAM_LABELS[k][1] + ')' : '') + '<input type="number" id="p_' + k + '" data-param="' + k + '" value="' + v + '" step="' + (k === 'runs' || k === 'employees' || k === 'workdays' ? 1 : 'any') + '" min="0"></label>';
+    }).join('');
+    $('#freqGrid').innerHTML = EVENTS.map(e => '<label>' + esc(e.title) + (e.perCompany ? ' (je Unternehmen)' : '') + '<input type="number" id="f_' + e.id + '" data-freq="' + e.id + '" value="' + e.freq + '" step="0.1" min="0"></label>').join('');
+  }
+
+  function rangeBar(sv, lo, hi) {
+    const span = hi - lo || 1;
+    const x = v => Math.max(0, Math.min(100, (v - lo) / span * 100));
+    const neg = sv.mean < 0;
+    return '<div class="range' + (neg ? ' neg' : '') + '" data-tip="' + esc('Ersparnis je Jahr: ' + fmtEur(sv.p10) + ' bis ' + fmtEur(sv.p90) + ', Mittel ' + fmtEur(sv.mean)) + '">' +
+      '<div class="zero" style="left:' + x(0) + '%"></div>' +
+      '<div class="band" style="left:' + x(Math.min(sv.p10, sv.p90)) + '%;width:' + Math.max(.8, Math.abs(x(sv.p90) - x(sv.p10))) + '%"></div>' +
+      '<div class="mean" style="left:' + x(sv.mean) + '%"></div></div>';
+  }
+
+  function roadChart(road) {
+    const pts = [{ i: 0, inv: 0, net: 0 }].concat(road.steps.map((s, i) => ({ i: i + 1, inv: s.cumInvest, net: s.cumNet })));
+    const W = 320, H = 190, L = 54, R = 10, Tm = 12, B = 26;
+    const max = Math.max.apply(null, pts.map(p => Math.max(p.inv, p.net)).concat([1]));
+    const min = Math.min(0, Math.min.apply(null, pts.map(p => p.net)));
+    const step = niceStep(max - min); const top = Math.ceil(max / step) * step || step; const bottom = Math.floor(min / step) * step;
+    const iw = W - L - R, ih = H - Tm - B;
+    const x = i => L + (pts.length === 1 ? 0 : i / (pts.length - 1) * iw);
+    const y = v => Tm + ih - (v - bottom) / (top - bottom) * ih;
+    const kfmt = v => Math.abs(v) >= 1e6 ? fmtNum(v / 1e6, 1) + ' M' : Math.abs(v) >= 1000 ? fmtNum(v / 1000) + ' k' : fmtNum(v);
+    let s = '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Kumulierte Investition und Nettoersparnis je Roadmap-Schritt"><g class="grid">';
+    for (let v = bottom; v <= top + 1e-9; v += step) s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '"/><text x="' + (L - 6) + '" y="' + (y(v) + 3) + '" text-anchor="end">' + kfmt(v) + '</text>';
+    s += '</g>';
+    const path = key => pts.map((p, i) => (i ? 'L' : 'M') + x(p.i) + ' ' + y(p[key])).join(' ');
+    s += '<path class="area-auto" d="' + path('net') + ' L' + x(pts[pts.length - 1].i) + ' ' + y(0) + ' L' + x(0) + ' ' + y(0) + ' Z"/>';
+    s += '<path class="line-human" d="' + path('inv') + '"/><path class="line-auto" d="' + path('net') + '"/>';
+    pts.forEach(p => { s += '<circle class="dot-h" cx="' + x(p.i) + '" cy="' + y(p.inv) + '" r="3.5"><title>' + esc('Schritt ' + p.i + ': Investition ' + fmtEur(p.inv)) + '</title></circle><circle class="dot-a" cx="' + x(p.i) + '" cy="' + y(p.net) + '" r="3.5"><title>' + esc('Schritt ' + p.i + ': Nettoersparnis je Jahr ' + fmtEur(p.net)) + '</title></circle>'; });
+    pts.forEach(p => { if (p.i === 0 || p.i === pts.length - 1 || pts.length <= 8 || p.i % 2 === 0) s += '<text class="xl" x="' + x(p.i) + '" y="' + (H - 8) + '" text-anchor="middle">' + p.i + '</text>'; });
+    s += '<g class="axis"><line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(0) + '" y2="' + y(0) + '"/></g></svg>';
+    return s;
+  }
+
+  let lastRoad = null;
+  function renderAnalysis() {
+    const P = state.params, L = state.levels, A = window.Analysis;
+    const frames = BUDGETS;
+    $('#frameSeg').innerHTML = frames.map((b, i) => '<button type="button" data-frame="' + i + '" aria-pressed="' + (i === frameIndex()) + '"><span class="n">' + b.points + '</span><span class="lbl">' + b.name + '</span></button>').join('');
+    if (!$('#p_employees')) renderParams();
+    const base = A.summary(L, P, 7);
+    $('#baseChips').innerHTML = FIELDS.map(f => '<span>' + f.name + ' <b>' + L[f.id] + '</b></span>').join('');
+    const tile = (l, v, rng) => '<div class="tile"><div class="lbl">' + l + '</div><div class="val">' + v + '</div>' + (rng ? '<div class="rng">' + rng + '</div>' : '') + '</div>';
+    $('#baseTiles').innerHTML =
+      tile('Vorfälle und Anfragen je Jahr', fmtNum(Math.round(base.exp.occurrences)), fmtNum(Math.round(base.occurrences.p10)) + ' – ' + fmtNum(Math.round(base.occurrences.p90))) +
+      tile('IT-Aufwand je Jahr', fmtNum(Math.round(base.exp.it / 60)) + ' h', fmtNum(Math.round(base.it.p10 / 60)) + ' – ' + fmtNum(Math.round(base.it.p90 / 60)) + ' h') +
+      tile('Ausfallzeit je Jahr', fmtNum(Math.round(base.exp.user / 60)) + ' h', fmtNum(Math.round(base.user.p10 / 60)) + ' – ' + fmtNum(Math.round(base.user.p90 / 60)) + ' h') +
+      tile('Tickets je Jahr', fmtNum(Math.round(base.exp.tickets)), fmtNum(Math.round(base.tickets.p10)) + ' – ' + fmtNum(Math.round(base.tickets.p90))) +
+      tile('Kosten je Jahr', fmtEur(base.exp.cost), fmtEur(base.cost.p10) + ' – ' + fmtEur(base.cost.p90));
+
+    const cands = A.candidates(L, P, base);
+    const lo = Math.min(0, Math.min.apply(null, cands.map(c => c.savingMC.p10)));
+    const hi = Math.max(1, Math.max.apply(null, cands.map(c => c.savingMC.p90)));
+    const bestRatio = Math.max.apply(null, cands.filter(c => !c.blocker).map(c => c.ratio));
+    $('#candTable').innerHTML = '<thead><tr><th>Maßnahme</th><th>Investition</th><th>Ersparnis je Jahr</th><th>Bandbreite</th><th>Nettonutzen je Jahr</th><th>Nutzen je € Invest</th><th>Amortisation</th><th style="text-align:left">Wirkung</th></tr></thead><tbody>' +
+      cands.map(c => {
+        const eff = c.changes.length ? c.changes.length + ' Ereignistyp' + (c.changes.length > 1 ? 'en' : '') + ' auf Stufe ' + c.changes[0].to + ': ' + c.changes.map(x => x.title).join('; ') : 'allein keine Wirkung';
+        const unl = c.unlocks.length ? '<small>schaltet frei: ' + c.unlocks.join(', ') + '</small>' : '';
+        const pair = c.pair && c.pair.net > c.net + 1 ? '<small>zusammen mit ' + c.pair.field.name + ' auf Stufe ' + c.pair.stage + ' (' + c.pair.points + ' P): Nettonutzen ' + fmtEur(c.pair.net) + '/Jahr</small>' : '';
+        const blk = c.blocker ? '<small>' + esc(c.blocker) + '</small>' : '';
+        return '<tr class="' + (c.blocker ? 'locked' : (c.ratio === bestRatio && c.ratio > 0 ? 'top' : '')) + '"><td class="name">' + c.field.name + ' auf Stufe ' + c.stage + '<small>' + esc(c.title) + '</small>' + blk + '</td>' +
+          '<td>' + c.cost.points + ' P<small>' + fmtEur(c.cost.invest) + ' + ' + fmtEur(c.cost.opex) + '/Jahr</small></td>' +
+          '<td>' + fmtEur(c.saving) + '</td><td>' + rangeBar(c.savingMC, lo, hi) + '</td>' +
+          '<td>' + fmtEur(c.net) + '</td><td>' + fmtNum(c.ratio, 2) + '</td><td>' + fmtMonths(c.payback) + '</td>' +
+          '<td style="text-align:left;max-width:300px"><span class="small">' + esc(eff) + '</span>' + pair + unl + '</td></tr>';
+      }).join('') + '</tbody>';
+
+    const road = A.roadmap(L, frames[frameIndex()].points, P);
+    lastRoad = road;
+    if (!road.steps.length) {
+      $('#roadSummary').textContent = 'Innerhalb dieses Rahmens gibt es keine Maßnahme mit positivem Nettonutzen. Erhöhen Sie den Rahmen oder prüfen Sie die Annahmen.';
+      $('#roadTable').innerHTML = ''; $('#roadChart').innerHTML = '';
+    } else {
+      const last = road.steps[road.steps.length - 1];
+      const pct = Math.round((1 - last.costAfter / road.startCost) * 100);
+      $('#roadSummary').innerHTML = '<b>' + road.steps.length + ' Schritte, ' + road.spent + ' Punkte, ' + fmtEur(last.cumInvest) + ' Investition.</b> Die jährlichen Kosten sinken von ' + fmtEur(road.startCost) + ' auf ' + fmtEur(last.costAfter) + ' (−' + pct + ' %). Nettoersparnis ' + fmtEur(last.cumNet) + ' je Jahr, Amortisation der gesamten Roadmap nach ' + fmtMonths(last.payback) + '.';
+      $('#roadTable').innerHTML = '<thead><tr><th>Nr.</th><th>Maßnahme</th><th>Investition</th><th>Ersparnis dieses Schritts</th><th>Investition kumuliert</th><th>Nettoersparnis je Jahr kumuliert</th><th>Amortisation</th></tr></thead><tbody>' +
+        road.steps.map((s, i) => '<tr class="' + (s.payback <= 12 ? 'pay' : '') + '"><td class="num">' + (i + 1) + '</td><td>' + s.field.name + ' auf Stufe ' + s.stage + '<small>' + esc(s.title) + (s.stepSaving <= 0 ? ' · Voraussetzung für spätere Schritte' : '') + '</small></td><td>' + s.points + ' P<small>' + fmtEur(s.invest) + '</small></td><td>' + fmtEur(s.stepSaving) + '</td><td>' + fmtEur(s.cumInvest) + '</td><td>' + fmtEur(s.cumNet) + '</td><td>' + fmtMonths(s.payback) + '</td></tr>').join('') + '</tbody>';
+      $('#roadChart').innerHTML = roadChart(road);
+    }
+  }
+
+  function adoptLevels(levels) {
+    state.levels = Object.assign({}, levels);
+    const need = spent();
+    let idx = BUDGETS.findIndex(b => b.points >= need); if (idx < 0) idx = BUDGETS.length - 1;
+    if (BUDGETS[state.budgetIdx].points < need) state.budgetIdx = idx;
+    store.set('zt.levels', state.levels); store.set('zt.budget', state.budgetIdx);
+  }
+  function scheduleAnalysis() { clearTimeout(analysisTimer); analysisTimer = setTimeout(renderAnalysis, 250); }
+
   /* ---------- Sonstiges ---------- */
   let toastTimer = null;
   function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600); }
@@ -482,6 +608,7 @@
     document.addEventListener('click', e => {
       const t = e.target;
       const nav = t.closest('[data-view]'); if (nav) { showView(nav.dataset.view); return; }
+      const fr = t.closest('[data-frame]'); if (fr) { state.frameIdx = parseInt(fr.dataset.frame, 10); store.set('zt.frame', state.frameIdx); renderAnalysis(); return; }
       const bd = t.closest('[data-budget]'); if (bd) { state.budgetIdx = parseInt(bd.dataset.budget, 10); store.set('zt.budget', state.budgetIdx); applyBase(); renderPlan(); return; }
       const inv = t.closest('.inv'); if (inv) { setStage(inv.dataset.field, parseInt(inv.dataset.stage, 10)); return; }
       const sp = t.closest('#speed button'); if (sp) { state.speed = parseInt(sp.dataset.s, 10); $$('#speed button').forEach(b => b.setAttribute('aria-pressed', b === sp)); return; }
@@ -491,6 +618,20 @@
       const tg = t.closest('[data-target]'); if (tg) { state.target = parseInt(tg.dataset.target, 10); store.set('zt.target', state.target); renderMatrix(); return; }
     });
     $('#startBtn').addEventListener('click', () => showScreen('plan'));
+    $('#analysisBtn').addEventListener('click', () => showScreen('analysis'));
+    $('#resultAnalysisBtn').addEventListener('click', () => { endHandled = true; showScreen('analysis'); });
+    $('#analysisBack').addEventListener('click', () => showScreen('plan'));
+    $('#paramsToggle').addEventListener('click', () => { const p = $('#paramsPanel'); p.hidden = !p.hidden; $('#paramsToggle').setAttribute('aria-expanded', !p.hidden); });
+    $('#varyBtn').addEventListener('click', () => { state.vary = !state.vary; store.set('zt.vary', state.vary); $('#varyBtn').setAttribute('aria-pressed', state.vary); toast(state.vary ? 'Jeder Durchlauf wählt Ereignisse, Zeiten und Aufwände zufällig.' : 'Jeder Durchlauf zeigt denselben Referenztag.'); });
+    $('#adoptRoadBtn').addEventListener('click', () => { if (!lastRoad || !lastRoad.steps.length) return; adoptLevels(lastRoad.end); showScreen('plan'); toast('Roadmap übernommen: ' + lastRoad.steps.length + ' Schritte in der Planung gesetzt.'); });
+    $('#adoptStepBtn').addEventListener('click', () => { if (!lastRoad || !lastRoad.steps.length) return; adoptLevels(lastRoad.steps[0].levels); renderAnalysis(); toast('Erster Schritt übernommen. Die Prognose geht jetzt von der neuen Ausgangslage aus.'); });
+    $('#roadRunBtn').addEventListener('click', () => { if (!lastRoad || !lastRoad.steps.length) return; adoptLevels(lastRoad.end); endHandled = false; startRun(); });
+    document.addEventListener('input', e => {
+      const p = e.target.dataset && e.target.dataset.param;
+      if (p) { let v = parseFloat(e.target.value); if (isNaN(v)) return; if (PCT_PARAMS[p]) v = v / 100; if (p === 'runs') v = Math.max(20, Math.min(2000, Math.round(v))); state.params[p] = v; store.set('zt.params', state.params); scheduleAnalysis(); return; }
+      const f = e.target.dataset && e.target.dataset.freq;
+      if (f) { const v = parseFloat(e.target.value); if (isNaN(v) || v < 0) return; const ev = EVENTS.find(x => x.id === f); ev.freq = v; const fo = store.get('zt.freq', {}); fo[f] = v; store.set('zt.freq', fo); scheduleAnalysis(); }
+    });
     $('#runBtn').addEventListener('click', () => { if (spent() === 0 && !state.useAssessment) toast('Ohne Investition läuft der Tag auf Stufe 1. Gut als Vergleich.'); startRun(); endHandled = false; });
     $('#resetPlanBtn').addEventListener('click', () => { state.levels = Object.assign({}, state.base); store.set('zt.levels', state.levels); renderPlan(); });
     $('#baseToggle').addEventListener('click', () => { state.useAssessment = !state.useAssessment; store.set('zt.useAssessment', state.useAssessment); applyBase(); renderPlan(); });
@@ -531,6 +672,7 @@
     bind();
     showView('game'); showScreen('start');
     $('#playBtn').innerHTML = ICON.pause + 'Pause';
+    $('#varyBtn').setAttribute('aria-pressed', state.vary);
     renderPlan();
     requestAnimationFrame(loop);
   }

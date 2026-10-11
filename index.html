@@ -112,6 +112,8 @@
       </div>
       <div class="actions plan-actions">
         <button type="button" class="btn primary big" id="runBtn">Arbeitstag starten</button>
+        <button type="button" class="btn big" id="analysisBtn">Maßnahmen bewerten und Roadmap</button>
+        <button type="button" class="btn" id="varyBtn" aria-pressed="false" title="Ereignisse und Zeiten des Tages zufällig variieren">Tag variieren</button>
         <button type="button" class="btn" data-view="path">Standort aus Selbsteinschätzung</button>
       </div>
     </div>
@@ -127,6 +129,7 @@
           <div class="actions">
             <button type="button" class="btn primary big replanBtn">Neu planen</button>
             <button type="button" class="btn" id="rerunBtn">Tag wiederholen</button>
+            <button type="button" class="btn" id="resultAnalysisBtn">Prognose und Roadmap</button>
             <button type="button" class="btn" data-view="path">Roadmap ansehen</button>
           </div>
         </div>
@@ -136,6 +139,61 @@
           <ul class="pv-list next" id="nextBest"></ul>
           <h3 style="margin-top:16px">Was auf welcher Stufe lief</h3>
           <ul class="pv-list" id="resultEvents"></ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Prognose & Maßnahmenbewertung -->
+  <section class="overlay" id="screen-analysis" hidden>
+    <div class="overlay-card analysis">
+      <div class="plan-head">
+        <div>
+          <div class="eyebrow">Prognose</div>
+          <h2>Maßnahmen bewerten und Roadmap ableiten</h2>
+          <p class="muted">Ausgehend von der aktuellen Konfiguration werden viele zufällig variierte Jahre simuliert: Jeder Ereignistyp tritt mit seiner typischen Häufigkeit auf, Aufwände streuen. Für jede mögliche nächste Maßnahme entstehen Investition, erwartete Ersparnis mit Bandbreite, Nettonutzen und Amortisation. Der Roadmap-Vorschlag wählt Schritt für Schritt die Maßnahme mit dem höchsten Nettonutzen je investiertem Euro und berücksichtigt dabei, dass manche Schritte erst spätere freischalten.</p>
+        </div>
+        <div class="budget-box">
+          <div class="eyebrow" style="margin-bottom:6px">Investitionsrahmen für die Roadmap</div>
+          <div class="segments" id="frameSeg" role="group" aria-label="Investitionsrahmen wählen"></div>
+          <div class="actions" style="margin-top:10px">
+            <button type="button" class="btn" id="paramsToggle" aria-expanded="false">Annahmen anpassen</button>
+            <button type="button" class="btn" id="analysisBack">Zurück zur Planung</button>
+          </div>
+        </div>
+      </div>
+      <div class="params" id="paramsPanel" hidden>
+        <div class="params-grid" id="paramsGrid"></div>
+        <div class="eyebrow" style="margin:12px 0 6px">Häufigkeit je Ereignistyp und Monat</div>
+        <div class="params-grid freq" id="freqGrid"></div>
+        <p class="note">Häufigkeiten je 100 Mitarbeiter; Ereignisse mit dem Zusatz „je Unternehmen“ hängen nicht von der Größe ab. Die Abdeckung rechnet die elf Typen auf das gesamte Vorfalls- und Anfrageaufkommen hoch.</p>
+      </div>
+
+      <h3 class="sec">Ausgangslage, hochgerechnet auf ein Jahr</h3>
+      <div class="levels-chips" id="baseChips"></div>
+      <div class="tiles five" id="baseTiles"></div>
+
+      <h3 class="sec">Einzelne Maßnahmen im Vergleich</h3>
+      <p class="note">Je Handlungsfeld die nächste Stufe, bewertet gegen die Ausgangslage. Der Balken zeigt die Bandbreite der jährlichen Ersparnis (10. bis 90. Perzentil), der Strich den Mittelwert. Nettonutzen berücksichtigt laufende Kosten.</p>
+      <div class="matrix-wrap"><table class="cand-table" id="candTable"></table></div>
+
+      <h3 class="sec">Vorgeschlagene Roadmap</h3>
+      <div class="road-grid">
+        <div>
+          <p id="roadSummary" class="muted"></p>
+          <div class="matrix-wrap"><table class="road-table" id="roadTable"></table></div>
+          <div class="actions">
+            <button type="button" class="btn primary" id="adoptRoadBtn">Roadmap in die Planung übernehmen</button>
+            <button type="button" class="btn" id="adoptStepBtn">Nur ersten Schritt übernehmen</button>
+            <button type="button" class="btn" id="roadRunBtn">Tag auf Zielkonfiguration simulieren</button>
+          </div>
+        </div>
+        <div class="chart-card">
+          <h3>Investition und Nettoersparnis je Jahr, kumuliert</h3>
+          <p class="sub">Je Schritt der Roadmap. Wo die Ersparnis über der Investition liegt, hat sich die Roadmap innerhalb eines Jahres bezahlt gemacht.</p>
+          <div class="legend" style="margin-bottom:6px"><span><i class="dot-human"></i>Investition kumuliert</span><span><i class="dot-auto"></i>Nettoersparnis je Jahr, kumuliert</span></div>
+          <div id="roadChart"></div>
+          <p class="note" style="margin-top:8px">Methodik: Erwartungswerte aus Häufigkeit × Aufwand je Stufe, Bandbreiten aus Monte-Carlo-Simulation. Alle Werte sind Modellannahmen, keine Zusagen.</p>
         </div>
       </div>
     </div>
@@ -187,6 +245,7 @@
 
 <script src="data.js"></script>
 <script src="game.js"></script>
+<script src="analysis.js"></script>
 <script src="app.js"></script>
 <!-- artifact:end -->
 </body>

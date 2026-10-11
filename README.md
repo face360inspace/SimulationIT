@@ -8,6 +8,8 @@ Eine Simulation der IT der Zukunft. Sie verteilen ein Budget auf sieben Handlung
 2. **Beobachten.** Der Arbeitstag läuft von 07:00 bis 19:30 in einem stilisierten Bürogeschoss mit Großraumbüro, Serverraum, Besprechungsraum und Service Desk. Techniker laufen zu Störungen, Automatisierung erscheint als Lichtsäule, der KI-Agent als Drohne, Freigaben als Häkchen am Service Desk. Rote Bildschirme zeigen blockierte Mitarbeiter, Ticketstapel die Warteschlange. Kennzahlen, Experience-Index und Ereignisprotokoll laufen live mit. Die Kamera folgt neuen Ereignissen, Maus ziehen dreht, Mausrad zoomt.
 3. **Auswerten.** Kennzahlen im Vergleich zu „Ohne Investition“ und zum letzten Durchlauf, Ergebnis je Ereignis mit begrenzendem Feld, und die beste nächste Investition (je eine Stufe mehr in einem Feld, bewertet an diesem Tag). Danach neu planen.
 
+4. **Prognose und Roadmap.** Ausgehend von der aktuellen Konfiguration simuliert die Analyse viele zufällig variierte Jahre: Jeder Ereignistyp tritt mit seiner typischen Häufigkeit auf (Poisson-verteilt, skaliert nach Mitarbeiterzahl und Abdeckung), Aufwände streuen. Daraus entstehen Jahreswerte mit Bandbreiten (10. bis 90. Perzentil) für die Ausgangslage und für jede mögliche nächste Maßnahme: Investition, erwartete Ersparnis, Nettonutzen nach laufenden Kosten, Nutzen je investiertem Euro, Amortisation, Wirkung auf einzelne Ereignistypen, freigeschaltete Stufen und der beste Partner-Schritt. Ein Optimierer schlägt eine Roadmap vor: Er wählt Schritt für Schritt die Maßnahme mit dem höchsten Nettonutzen je Euro und schaut dabei bis zu drei Schritte voraus, damit reine Voraussetzungen (etwa Telemetrie vor Auto-Remediation) richtig eingeordnet werden. Alle Annahmen (Mitarbeiter, Abdeckung, Stundensätze, Ticketkosten, Investition je Punkt, laufende Kosten, Streuung, Häufigkeiten je Ereignistyp) sind in der Oberfläche änderbar. Die Roadmap lässt sich ganz oder schrittweise in die Planung übernehmen und direkt als Tag simulieren. Mit „Tag variieren“ wählt auch die sichtbare Simulation Ereignisse, Zeiten und Aufwände zufällig.
+
 Ergänzend zwei Wissensseiten: **Reifegrade** (fünf Stufen mit Richtwerten, Perspektiven und Diagrammen) und **Ihr Weg** (Selbsteinschätzung über sieben Handlungsfelder mit Roadmap). Die Einschätzung lässt sich als Ausgangslage in die Simulation übernehmen; vorhandene Stufen kosten dann kein Budget.
 
 ## Nutzung
@@ -24,7 +26,8 @@ Alle fachlichen Inhalte liegen in `data.js`:
 - `FIELDS`: Handlungsfelder mit Kurztiteln (`short`) und Beschreibungen (`stages`) je Stufe.
 - `STAGE_COST`, `BUDGETS`, `stageBlocker()`, `effectiveLevel()`: Kosten, Budgets, Voraussetzungen und die Regel, auf welcher Stufe ein Ereignis läuft.
 - `TRANSITIONS`: Fokus, Dauer, Maßnahmen und Erfolgskriterium je Schritt der Roadmap.
-- `EVENTS`: Ereignisse mit beteiligten Feldern (`fields`) und fünf Varianten, jede mit Schritten (`a` Akteur, `t` Text, `d` Dauer in Minuten, `w` Wartehinweis) sowie Aufwand (`it`), Ausfallzeit (`user`), Eingriffen (`touches`), Ticket und Kennzeichen `prevented`.
+- `PARAMS`: Annahmen der Prognose (Mitarbeiter, Abdeckung, Kostensätze, Investition je Punkt, laufende Kosten, Simulationsläufe, Streuung).
+- `EVENTS`: Ereignisse mit beteiligten Feldern (`fields`), Häufigkeit je Monat (`freq`, je 100 Mitarbeiter oder `perCompany`) und fünf Varianten, jede mit Schritten (`a` Akteur, `t` Text, `d` Dauer in Minuten, `w` Wartehinweis) sowie Aufwand (`it`), Ausfallzeit (`user`), Eingriffen (`touches`), Ticket und Kennzeichen `prevented`.
 
 Alle Zahlen sind illustrative Richtwerte, keine Benchmarks.
 
@@ -36,4 +39,5 @@ Alle Zahlen sind illustrative Richtwerte, keine Benchmarks.
 | `styles.css` | Gestaltung, hell und dunkel |
 | `data.js` | Inhalte und Simulationsregeln |
 | `game.js` | 3D-Szene (three.js): Gebäude, Figuren, Marker, Effekte, Kamera |
+| `analysis.js` | Prognose: Erwartungswerte, Monte-Carlo-Simulation, Maßnahmenbewertung, Roadmap-Optimierer |
 | `app.js` | Ablauf, Planung, Simulationsengine, HUD, Auswertung, Wissensseiten |
