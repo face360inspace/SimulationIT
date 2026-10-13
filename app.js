@@ -14,10 +14,14 @@
   const ROUTES = { start: 'start', plan: 'planen', run: 'arbeitstag', result: 'auswertung', analysis: 'prognose', levels: 'reifegrade', path: 'standort' };
   const STEP_NAMES = { plan: 'Planung', run: 'Arbeitstag', result: 'Auswertung', analysis: 'Prognose' };
 
+  const STORAGE_VERSION = 2;   // Erhöhen setzt den gespeicherten Zustand aller Nutzer beim nächsten Laden zurück
   const store = {
     get(k, fb) { try { const v = localStorage.getItem(k); return v === null ? fb : JSON.parse(v); } catch (e) { return fb; } },
-    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* kein Speicher */ } }
+    set(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { /* kein Speicher */ } },
+    clearAll() { try { Object.keys(localStorage).filter(k => k.indexOf('zt.') === 0).forEach(k => localStorage.removeItem(k)); } catch (e) { /* kein Speicher */ } }
   };
+  (function () { if (store.get('zt.version', 0) !== STORAGE_VERSION) { const theme = store.get('zt.theme', ''); store.clearAll(); if (theme) store.set('zt.theme', theme); store.set('zt.version', STORAGE_VERSION); } })();
+  const DEFAULT_FREQ = {}; EVENTS.forEach(e => { DEFAULT_FREQ[e.id] = e.freq; });
 
   const allOne = () => { const o = {}; FIELDS.forEach(f => { o[f.id] = 1; }); return o; };
   const state = {
@@ -676,6 +680,25 @@
     }
   }
 
+  function resetAll() {
+    const theme = store.get('zt.theme', '');
+    store.clearAll(); if (theme) store.set('zt.theme', theme); store.set('zt.version', STORAGE_VERSION);
+    state.budgetIdx = 1; state.useAssessment = false; state.base = allOne(); state.levels = allOne();
+    state.speed = 1; $$('#speed button').forEach(b => b.setAttribute('aria-pressed', b.dataset.s === '1'));
+    state.playing = false; state.ended = false; state.day = null; state.runs = []; state.evaluated = false; state.runCount = 0;
+    state.follow = true; $('#followBtn').checked = true; window.Scene3D.setFollow(true);
+    state.vary = false; $('#varyBtn').checked = false;
+    state.assessment = {}; FIELDS.forEach(f => { state.assessment[f.id] = 2; }); state.assessed = false; state.target = 5;
+    state.params = Object.assign({}, PARAMS); state.frameIdx = null; state.levelView = 3;
+    EVENTS.forEach(e => { e.freq = DEFAULT_FREQ[e.id]; });
+    const pg = $('#paramsGrid'); if (pg) { pg.innerHTML = ''; $('#freqGrid').innerHTML = ''; }
+    $('#feed').innerHTML = ''; window.Scene3D.reset();
+    endHandled = true;
+    renderPlan(); renderMatrix();
+    showView('sim'); showScreen('start');
+    toast('Alles zurückgesetzt. Die Simulation beginnt von vorn.');
+  }
+
   function adoptLevels(levels) {
     state.levels = Object.assign({}, levels);
     const need = spent();
@@ -725,6 +748,7 @@
       const tg = t.closest('[data-target]'); if (tg) { state.target = parseInt(tg.dataset.target, 10); store.set('zt.target', state.target); renderMatrix(); return; }
     });
     $('#startBtn').addEventListener('click', () => showScreen('plan'));
+    $('#resetAllBtn').addEventListener('click', async () => { if (await ask('Planung, Durchläufe, Auswertung, Standortbestimmung und Annahmen werden gelöscht. Die Simulation beginnt von vorn. Fortfahren?')) resetAll(); });
     $('#analysisBtn').addEventListener('click', () => showScreen('analysis'));
     $('#resultAnalysisBtn').addEventListener('click', () => { endHandled = true; showScreen('analysis'); });
     $('#analysisBack').addEventListener('click', () => showScreen(state.evaluated && state.returnScreen === 'result' ? 'result' : 'plan'));
