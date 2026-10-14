@@ -58,19 +58,110 @@
     <div class="overlay-card start">
       <div class="eyebrow">Eine Simulation der IT der Zukunft</div>
       <h2>Wie viel Zero Touch kauft Ihr Budget?</h2>
-      <p>Sie leiten die IT eines Unternehmens. Verteilen Sie ein Budget auf sieben Handlungsfelder, dann läuft ein Arbeitstag mit elf typischen Ereignissen ab: vom defekten Notebook bis zur Kontoübernahme. Sie sehen in der 3D-Szene, wer eingreifen muss, wer wartet und was automatisch passiert. Die Auswertung zeigt die Wirkung, die Prognose rechnet sie auf Jahre hoch und schlägt eine Roadmap vor.</p>
+      <p>Die Simulation beginnt beim tatsächlichen Zustand eines Unternehmens: ServiceNow-Daten, Architekturunterlagen und das Wissen der Delivery-Teams ergeben ein Ist-Bild je Handlungsfeld. Darauf verteilen Sie ein Budget, lassen einen Arbeitstag mit elf typischen Ereignissen in der 3D-Szene ablaufen und erhalten eine Prognose mit Quick Wins und einem individuellen Transformationspfad: welche Investition, welche Wirkung, welche Dauer.</p>
       <ol class="howto">
+        <li><b>Ist-Aufnahme.</b> ServiceNow-Export oder Direktverbindung, Dokumentation, Kurzinterview. Daraus entsteht automatisch der Reifegrad je Handlungsfeld mit Begründung.</li>
         <li><b>Planen.</b> Stufen in den Handlungsfeldern kaufen. Manche Stufen setzen andere voraus.</li>
         <li><b>Arbeitstag.</b> Techniker laufen zu Störungen, Automatisierung erscheint als Lichtsäule, der KI-Agent als Drohne. Rote Bildschirme zeigen blockierte Mitarbeiter.</li>
         <li><b>Auswertung.</b> Kennzahlen im Vergleich, Wirkung je Ereignis.</li>
         <li><b>Prognose.</b> Viele simulierte Jahre, Bewertung jeder Maßnahme, Roadmap-Vorschlag.</li>
       </ol>
       <div class="actions">
-        <button type="button" class="btn primary big" id="startBtn">Simulation starten</button>
+        <button type="button" class="btn primary big" id="startBtn">Mit Ist-Aufnahme starten</button>
+        <button type="button" class="btn" id="startPlanBtn">Ohne Kundendaten planen</button>
         <button type="button" class="btn" data-view="path">Standort bestimmen</button>
         <button type="button" class="btn" data-view="levels">Reifegrade ansehen</button>
       </div>
       <p class="note">Maus ziehen dreht die Kamera, Mausrad zoomt. Alle Zahlen sind illustrative Richtwerte. <button type="button" class="linkbtn" id="resetAllBtn">Alles zurücksetzen</button></p>
+    </div>
+  </section>
+
+  <!-- Ist-Aufnahme -->
+  <section class="overlay" id="screen-intake" hidden>
+    <div class="overlay-card intake">
+      <div class="plan-head">
+        <div>
+          <div class="eyebrow">Schritt 1 · Ist-Aufnahme</div>
+          <h2>Das Ist-Bild des Kunden</h2>
+          <p class="muted">Drei Quellen ergeben automatisch den Reifegrad je Handlungsfeld, mit Begründung: Tickets und CMDB aus ServiceNow, Werkzeuge aus Architekturunterlagen und Wikis, Antworten der Delivery-Teams. Echte Ticketvolumen kalibrieren die Prognose. Jede Quelle ist optional.</p>
+        </div>
+        <div class="budget-box">
+          <div class="eyebrow" style="margin-bottom:6px">Kundenprofil</div>
+          <div class="params-grid two">
+            <label>Unternehmen<input type="text" id="custName" placeholder="Name des Kunden" autocomplete="off"></label>
+            <label>Mitarbeiter<input type="number" id="custEmployees" min="10" step="10" value="300"></label>
+          </div>
+          <div class="src-status" id="srcStatus"></div>
+          <div class="actions" style="margin-top:10px">
+            <button type="button" class="btn" id="demoBtn">Beispielkunden laden</button>
+            <button type="button" class="btn ghost" id="profileCopyBtn" title="Ist-Bild, Kennzahlen und Antworten als JSON in die Zwischenablage">Profil kopieren</button>
+            <label class="btn ghost" for="profileImport">Profil einlesen</label><input type="file" id="profileImport" accept=".json,application/json" hidden>
+          </div>
+        </div>
+      </div>
+
+      <section class="ana-sec" aria-labelledby="inSnH">
+        <div class="ana-sec-head"><span class="ana-num">A</span><div><h3 id="inSnH">ServiceNow und ITSM-Daten</h3><p class="note">Incidents, Requests, Changes und CMDB. Als Export (CSV oder JSON aus Listenansicht, REST-Antwort oder Report) oder direkt über die Tabellen-API. Spaltennamen werden automatisch erkannt (ServiceNow-Standard, deutsche und englische Varianten).</p></div></div>
+        <div class="src-grid">
+          <div class="src-box">
+            <div class="eyebrow" style="margin-bottom:8px">Export importieren</div>
+            <div class="drop" id="dropZone">Dateien hierher ziehen oder auswählen. Der Dateiname ordnet zu (incident, request/ritm, change, cmdb/ci); sonst nach Inhalt.
+              <input type="file" id="snFiles" multiple accept=".csv,.json,.txt,text/csv,application/json">
+            </div>
+            <div class="file-rows">
+              <label>Incidents<input type="file" data-sn="incidents" accept=".csv,.json"></label>
+              <label>Requests<input type="file" data-sn="requests" accept=".csv,.json"></label>
+              <label>Changes<input type="file" data-sn="changes" accept=".csv,.json"></label>
+              <label>CMDB<input type="file" data-sn="cis" accept=".csv,.json"></label>
+            </div>
+          </div>
+          <div class="src-box">
+            <div class="eyebrow" style="margin-bottom:8px">Direkt verbinden (Tabellen-API)</div>
+            <div class="params-grid two">
+              <label>Instanz<input type="url" id="snInstance" placeholder="https://kunde.service-now.com"></label>
+              <label>Zeitraum (Monate)<input type="number" id="snMonths" value="6" min="1" max="24"></label>
+              <label>Benutzer<input type="text" id="snUser" autocomplete="off"></label>
+              <label>Passwort<input type="password" id="snPass" autocomplete="off"></label>
+              <label>oder OAuth-Token<input type="password" id="snToken" autocomplete="off"></label>
+            </div>
+            <div class="actions" style="margin-top:8px"><button type="button" class="btn" id="snConnectBtn">Verbinden und laden</button><span class="note" id="snStatus"></span></div>
+            <p class="note">Die Instanz braucht eine CORS-Regel für die Adresse dieser Anwendung und einen Benutzer mit Leserecht auf incident, sc_req_item, change_request und cmdb_ci. Zugangsdaten bleiben im Browser.</p>
+          </div>
+        </div>
+        <div id="snResult"></div>
+      </section>
+
+      <section class="ana-sec" aria-labelledby="inDocH">
+        <div class="ana-sec-head"><span class="ana-num">B</span><div><h3 id="inDocH">Architektur, Dokumentation, Wikis</h3><p class="note">Text einfügen oder Dateien laden (Architekturüberblick, Betriebshandbuch, Toolliste, Wiki-Export). Erkannte Werkzeuge und Fähigkeiten werden Handlungsfeldern und Stufen zugeordnet; Verneinungen wie „kein SSO“ oder „SIEM geplant“ zählen als nicht vorhanden. Die Liste darunter lässt sich von Hand korrigieren.</p></div></div>
+        <div class="src-grid">
+          <div class="src-box">
+            <textarea id="docText" rows="7" placeholder="Zum Beispiel: Clients per Intune mit Autopilot, Entra ID mit Conditional Access, Monitoring mit Checkmk, Skripte in GitLab, ServiceNow mit Self-Service-Portal, Defender for Endpoint, kein SIEM …"></textarea>
+            <div class="actions" style="margin-top:8px"><label class="btn ghost" for="docFiles">Dateien laden</label><input type="file" id="docFiles" multiple accept=".txt,.md,.csv,.json,.html,.htm" hidden><button type="button" class="btn" id="detectBtn">Werkzeuge erkennen</button><span class="note" id="docStatus"></span></div>
+          </div>
+          <div class="src-box"><div class="eyebrow" style="margin-bottom:8px">Erkannt und bestätigt</div><div class="tool-list" id="toolList"></div></div>
+        </div>
+      </section>
+
+      <section class="ana-sec" aria-labelledby="inIvH">
+        <div class="ana-sec-head"><span class="ana-num">C</span><div><h3 id="inIvH">Betriebswissen der Delivery-Teams</h3><p class="note">Kurzinterview mit 21 Fragen, je drei pro Handlungsfeld. Antworten stützen oder widerlegen die Stufe, die Daten und Dokumente nahelegen.</p></div></div>
+        <div class="questions" id="questionList"></div>
+      </section>
+
+      <section class="ana-sec" aria-labelledby="inResH">
+        <div class="ana-sec-head"><span class="ana-num">D</span><div><h3 id="inResH">Automatisch abgeleitetes Ist-Bild</h3><p class="note">Je Handlungsfeld die Stufe, die die Quellen zusammen nahelegen, mit Sicherheit und Begründung. Die Stufe lässt sich überschreiben. „Übernehmen“ macht das Ist-Bild zur Ausgangslage der Planung und kalibriert die Prognose mit den Ticketvolumen und der Mitarbeiterzahl.</p></div></div>
+        <div class="cands" id="proposalCards"></div>
+        <div class="actions"><button type="button" class="btn primary" id="applyIntakeBtn">Ist-Bild als Ausgangslage übernehmen</button><span class="note" id="applyStatus"></span></div>
+      </section>
+
+      <section class="ana-sec" aria-labelledby="inQwH">
+        <div class="ana-sec-head"><span class="ana-num">E</span><div><h3 id="inQwH">Quick Wins aus den Daten</h3><p class="note">Maßnahmen, die das Ticketaufkommen direkt adressieren und sich schnell umsetzen lassen.</p></div></div>
+        <ul class="pv-list" id="quickWinList"></ul>
+      </section>
+
+      <div class="actions plan-actions">
+        <button type="button" class="btn primary big" id="intakeNextBtn">Weiter: Planen</button>
+        <button type="button" class="btn" id="intakeSkipBtn">Ohne Kundendaten planen</button>
+      </div>
     </div>
   </section>
 
@@ -79,7 +170,7 @@
     <div class="overlay-card plan">
       <div class="plan-head">
         <div>
-          <div class="eyebrow">Schritt 1 · Planen</div>
+          <div class="eyebrow">Schritt 2 · Planen</div>
           <h2>Budget auf Handlungsfelder verteilen</h2>
           <p class="muted">Klicken Sie auf die Stufe, die Sie erreichen wollen. Stufe 4 braucht End-to-End-Telemetrie, Stufe 5 zusätzlich AIOps und Auto-Remediation. Die Organisation begrenzt alles: Ereignisse laufen höchstens eine Stufe über der Organisation.</p>
         </div>
@@ -145,7 +236,7 @@
     <div class="overlay-card analysis">
       <div class="plan-head">
         <div>
-          <div class="eyebrow">Schritt 4 · Prognose und Roadmap</div>
+          <div class="eyebrow">Schritt 5 · Prognose und Roadmap</div>
           <h2>Was bringt welche Maßnahme?</h2>
           <p class="muted">Die Prognose geht von Ihrer Planung aus und rechnet sie auf Jahre hoch. Eine Maßnahme hebt genau ein Handlungsfeld um eine Stufe. Für jede mögliche Maßnahme sehen Sie, was sie kostet, was sie spart und wovon sie abhängt. Am Ende steht ein Roadmap-Vorschlag.</p>
         </div>
@@ -187,6 +278,7 @@
 
       <section class="ana-sec" aria-labelledby="anaCandH">
         <div class="ana-sec-head"><span class="ana-num">C</span><div><h3 id="anaCandH">Mögliche nächste Maßnahmen</h3><p class="note">Je Handlungsfeld die nächste Stufe, bewertet gegen die Ausgangslage über viele simulierte Jahre. Sortiert nach Nettonutzen je investiertem Euro. Viele Maßnahmen wirken erst als Paar; jede Karte nennt deshalb den besten Partnerschritt. Die Roadmap in Abschnitt D bringt die Paare in die richtige Reihenfolge. Der Balken zeigt die Bandbreite der jährlichen Ersparnis (10. bis 90. Perzentil), der Strich den Mittelwert.</p></div></div>
+        <div id="anaQuickWins"></div>
         <div class="cands" id="candCards"></div>
       </section>
 
@@ -212,6 +304,12 @@
           </div>
         </div>
       </section>
+
+      <section class="ana-sec" aria-labelledby="anaPathH">
+        <div class="ana-sec-head"><span class="ana-num">E</span><div><h3 id="anaPathH">Transformationspfad und Dauer</h3><p class="note">Die Roadmap als Zeitplan mit zwei parallelen Arbeitssträngen. Typische Dauer je Schritt: Stufe 2 drei Monate, Stufe 3 fünf, Stufe 4 sechs, Stufe 5 acht Monate; Organisationsschritte dauern ein Drittel länger. Voraussetzungen werden eingehalten, Schritte im selben Feld folgen aufeinander.</p></div></div>
+        <p class="road-summary" id="pathSummary"></p>
+        <div class="chart-card"><div id="pathChart"></div></div>
+      </section>
     </div>
   </section>
 </div>
@@ -221,10 +319,11 @@
   <div class="wrap">
     <button type="button" class="brand" data-home title="Zum Start"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14l5-5 4 4 7-7"/><path d="M15 6h5v5"/></svg></span><span class="brand-text"><h1>Zero-Touch IT Simulator</h1></span></button>
     <ol class="stepper" id="steps" aria-label="Ablauf der Simulation">
-      <li><button type="button" data-step="plan"><span class="n">1</span><span class="lbl">Planen</span></button></li>
-      <li><button type="button" data-step="run"><span class="n">2</span><span class="lbl">Arbeitstag</span></button></li>
-      <li><button type="button" data-step="result"><span class="n">3</span><span class="lbl">Auswertung</span></button></li>
-      <li><button type="button" data-step="analysis"><span class="n">4</span><span class="lbl">Prognose</span></button></li>
+      <li><button type="button" data-step="intake"><span class="n">1</span><span class="lbl">Ist-Aufnahme</span></button></li>
+      <li><button type="button" data-step="plan"><span class="n">2</span><span class="lbl">Planen</span></button></li>
+      <li><button type="button" data-step="run"><span class="n">3</span><span class="lbl">Arbeitstag</span></button></li>
+      <li><button type="button" data-step="result"><span class="n">4</span><span class="lbl">Auswertung</span></button></li>
+      <li><button type="button" data-step="analysis"><span class="n">5</span><span class="lbl">Prognose</span></button></li>
     </ol>
     <nav class="nav" aria-label="Wissen">
       <button type="button" data-view="levels">Reifegrade</button>
@@ -271,7 +370,10 @@
 
 <script src="data.js"></script>
 <script src="game.js"></script>
+<script src="catalog.js"></script>
+<script src="connectors.js"></script>
 <script src="analysis.js"></script>
+<script src="intake.js"></script>
 <script src="app.js"></script>
 <!-- artifact:end -->
 </body>

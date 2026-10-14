@@ -11,8 +11,8 @@
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
   const MS_PER_MIN = 170;   // Echtzeit je simulierter Minute bei 1×
-  const ROUTES = { start: 'start', plan: 'planen', run: 'arbeitstag', result: 'auswertung', analysis: 'prognose', levels: 'reifegrade', path: 'standort' };
-  const STEP_NAMES = { plan: 'Planung', run: 'Arbeitstag', result: 'Auswertung', analysis: 'Prognose' };
+  const ROUTES = { start: 'start', intake: 'ist-aufnahme', plan: 'planen', run: 'arbeitstag', result: 'auswertung', analysis: 'prognose', levels: 'reifegrade', path: 'standort' };
+  const STEP_NAMES = { intake: 'Ist-Aufnahme', plan: 'Planung', run: 'Arbeitstag', result: 'Auswertung', analysis: 'Prognose' };
 
   const STORAGE_VERSION = 2;   // Erhöhen setzt den gespeicherten Zustand aller Nutzer beim nächsten Laden zurück
   const store = {
@@ -34,6 +34,7 @@
     assessment: store.get('zt.assessment', null), assessed: store.get('zt.assessed', false),
     target: store.get('zt.target', 5),
     params: Object.assign({}, PARAMS, store.get('zt.params', {})),
+    intake: Object.assign({ customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false }, store.get('zt.intake', {})),
     frameIdx: store.get('zt.frame', null),
     vary: store.get('zt.vary', false),
     runCount: 0
@@ -128,11 +129,11 @@
       const s = b.dataset.step;
       if (s === active) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
       b.disabled = (s === 'result' && !state.evaluated) || (s === 'run' && state.screen === 'run' && !state.ended && state.view === 'sim');
-      b.classList.toggle('done', (s === 'plan' && state.screen !== 'start') || (s === 'run' && state.evaluated) || (s === 'result' && state.evaluated && state.screen === 'analysis'));
+      b.classList.toggle('done', (s === 'intake' && state.intake.applied) || (s === 'plan' && ['run', 'result', 'analysis'].indexOf(state.screen) >= 0) || (s === 'run' && state.evaluated) || (s === 'result' && state.evaluated && state.screen === 'analysis'));
     });
     const back = $('#backBtn');
     if (state.view !== 'sim') {
-      const lbl = { start: 'Zum Start', plan: 'Zurück zur Planung', run: state.ended ? 'Zurück zur Auswertung' : 'Zurück zum Arbeitstag', result: 'Zurück zur Auswertung', analysis: 'Zurück zur Prognose' }[state.returnScreen] || 'Zur Simulation';
+      const lbl = { start: 'Zum Start', intake: 'Zurück zur Ist-Aufnahme', plan: 'Zurück zur Planung', run: state.ended ? 'Zurück zur Auswertung' : 'Zurück zum Arbeitstag', result: 'Zurück zur Auswertung', analysis: 'Zurück zur Prognose' }[state.returnScreen] || 'Zur Simulation';
       back.textContent = lbl; back.hidden = false;
     } else back.hidden = true;
   }
@@ -142,11 +143,12 @@
   }
   function showScreen(name, opts) {
     state.screen = name;
-    ['start', 'plan', 'result', 'analysis'].forEach(s => { $('#screen-' + s).hidden = s !== name; });
+    ['start', 'intake', 'plan', 'result', 'analysis'].forEach(s => { $('#screen-' + s).hidden = s !== name; });
     const hud = $('#hud');
     hud.classList.toggle('dim', name !== 'run');
     hud.inert = name !== 'run';
     document.body.classList.toggle('in-run', name === 'run');
+    if (name === 'intake') renderIntake();
     if (name === 'plan') renderPlan();
     if (name === 'analysis') renderAnalysis();
     updateStepper();
@@ -202,7 +204,8 @@
     $('#budgetText').innerHTML = '<b>' + sp + '</b> von ' + b + ' Punkten eingesetzt · ' + (b - sp) + ' frei';
     $$('#baseSeg button').forEach(b => b.setAttribute('aria-pressed', (b.dataset.base === 'assess') === state.useAssessment));
     $('#baseAssessBtn').disabled = !state.assessed;
-    $('#baseHint').innerHTML = state.useAssessment ? 'Vorhandene Stufen aus Ihrer Standortbestimmung kosten kein Budget.' : (state.assessed ? 'Ihre Standortbestimmung liegt vor und kann als Ausgangslage dienen.' : 'Noch keine Standortbestimmung. <button type="button" class="linkbtn" data-view="path">Standort bestimmen</button>');
+    $('#baseHint').innerHTML = state.useAssessment ? (state.intake.applied ? 'Ausgangslage aus der Ist-Aufnahme' + (state.intake.customer ? ' von ' + esc(state.intake.customer) : '') + '. Vorhandene Stufen kosten kein Budget.' : 'Vorhandene Stufen aus Ihrer Standortbestimmung kosten kein Budget.') : (state.assessed ? 'Ein Ist-Bild liegt vor und kann als Ausgangslage dienen.' : 'Noch kein Ist-Bild. <button type="button" class="linkbtn" data-step="intake">Ist-Aufnahme</button> oder <button type="button" class="linkbtn" data-view="path">Standort bestimmen</button>');
+    $$('#baseSeg button').forEach(b => { if (b.dataset.base === 'assess') b.textContent = state.intake.applied ? 'Aus Ist-Aufnahme' : 'Aus Standortbestimmung'; });
     $('#varyBtn').checked = !!state.vary;
 
     let html = '<thead><tr><th>Handlungsfeld</th>' + LEVELS.map(l => '<th class="lv">Stufe ' + l.n + '<small>' + l.name + '</small></th>').join('') + '</tr></thead><tbody>';
@@ -639,6 +642,7 @@
     const lo = Math.min(0, Math.min.apply(null, cands.map(c => c.savingMC.p10)));
     const hi = Math.max(1, Math.max.apply(null, cands.map(c => c.savingMC.p90)));
     const bestRatio = Math.max.apply(null, cands.filter(c => !c.blocker).map(c => c.ratio));
+    renderQuickWinsAnalysis(L, cands);
     $('#candCards').innerHTML = cands.map(c => {
       const cur = L[c.field.id];
       const top = !c.blocker && c.ratio === bestRatio && c.ratio > 0;
@@ -678,6 +682,7 @@
       }).join('');
       $('#roadChart').innerHTML = roadChart(road);
     }
+    renderPath(road, L);
   }
 
   function resetAll() {
@@ -691,6 +696,7 @@
     state.assessment = {}; FIELDS.forEach(f => { state.assessment[f.id] = 2; }); state.assessed = false; state.target = 5;
     state.params = Object.assign({}, PARAMS); state.frameIdx = null; state.levelView = 3;
     EVENTS.forEach(e => { e.freq = DEFAULT_FREQ[e.id]; });
+    state.intake = { customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false }; rawData = null;
     const pg = $('#paramsGrid'); if (pg) { pg.innerHTML = ''; $('#freqGrid').innerHTML = ''; }
     $('#feed').innerHTML = ''; window.Scene3D.reset();
     endHandled = true;
@@ -707,6 +713,254 @@
     store.set('zt.levels', state.levels); store.set('zt.budget', state.budgetIdx);
   }
   function scheduleAnalysis() { clearTimeout(analysisTimer); analysisTimer = setTimeout(renderAnalysis, 250); }
+
+
+  /* ---------- Ist-Aufnahme ---------- */
+  let rawData = null;   // Rohdaten der Sitzung (werden nicht gespeichert)
+  const saveIntake = () => store.set('zt.intake', state.intake);
+  const fmtDur = h => h === null || h === undefined ? '–' : (h < 1 ? Math.round(h * 60) + ' Min' : h < 48 ? fmtNum(h, 1) + ' h' : fmtNum(h / 24, 1) + ' Tage');
+  const pct = v => v === null || v === undefined ? '–' : Math.round(v * 100) + ' %';
+
+  function intakeSignals() {
+    const I = window.Intake, it = state.intake;
+    const detPos = it.detected.filter(d => !d.negated).map(d => d.id), detNeg = it.detected.filter(d => d.negated).map(d => d.id);
+    const ids = TOOL_CATALOG.map(t => t.id).filter(id => it.manual[id] === true || (it.manual[id] !== false && detPos.indexOf(id) >= 0));
+    const negs = detNeg.filter(id => it.manual[id] !== true);
+    return I.signalsFromMetrics(it.metrics).concat(I.signalsFromTools(ids, negs), I.signalsFromAnswers(it.answers));
+  }
+  function intakeProposal() {
+    const p = window.Intake.propose(intakeSignals());
+    FIELDS.forEach(f => { p[f.id].final = state.intake.overrides[f.id] || p[f.id].stage; });
+    return p;
+  }
+
+  function renderIntake() {
+    const it = state.intake;
+    $('#custName').value = it.customer || '';
+    $('#custEmployees').value = it.employees || 300;
+    renderSrcStatus(); renderSnResult(); renderToolList(); renderQuestions(); renderProposal();
+  }
+  function renderSrcStatus() {
+    const it = state.intake, c = it.counts || {};
+    const sn = it.metrics && it.metrics.tickets;
+    const tools = it.detected.length || Object.keys(it.manual).some(k => it.manual[k]);
+    const qs = Object.keys(it.answers).length;
+    $('#srcStatus').innerHTML =
+      '<span class="' + (sn ? 'on' : '') + '">ServiceNow: ' + (sn ? (c.incidents || 0) + ' Incidents, ' + (c.requests || 0) + ' Requests, ' + (c.changes || 0) + ' Changes, ' + (c.cis || 0) + ' CIs' : 'keine Daten') + '</span>' +
+      '<span class="' + (tools ? 'on' : '') + '">Dokumentation: ' + (tools ? it.detected.filter(d => !d.negated).length + ' Werkzeuge erkannt' : 'nichts erkannt') + '</span>' +
+      '<span class="' + (qs ? 'on' : '') + '">Interview: ' + qs + ' von ' + QUESTIONS.length + ' Fragen</span>' +
+      '<span class="' + (it.applied ? 'on' : '') + '">' + (it.applied ? 'Ist-Bild übernommen' : 'noch nicht übernommen') + '</span>';
+  }
+  function renderSnResult() {
+    const m = state.intake.metrics, box = $('#snResult');
+    if (!m || !m.tickets) { box.innerHTML = '<p class="note" style="margin-top:10px">Noch keine Ticketdaten. Laden Sie einen Export, verbinden Sie eine Instanz oder nutzen Sie den Beispielkunden.</p>'; return; }
+    const tile = (l, v, s) => '<div class="tile"><div class="lbl">' + l + '</div><div class="val">' + v + '</div>' + (s ? '<div class="rng">' + s + '</div>' : '') + '</div>';
+    box.innerHTML = '<div class="tiles kpi9">' +
+      tile('Tickets je Monat', fmtNum(Math.round(m.perMonth)), m.months.toFixed(1) + ' Monate Daten') +
+      tile('Je 100 Mitarbeiter und Monat', m.per100 !== null ? fmtNum(Math.round(m.per100)) : '–', 'Richtwert Stufe 2: ≈ 90') +
+      tile('Über Self-Service', pct(m.selfServiceShare)) + tile('Automatisch gelöst', pct(m.autoShare)) + tile('Aus Monitoring angelegt', pct(m.monitoringShare)) +
+      tile('Ø Lösungszeit', fmtDur(m.mttrHours), 'Median ' + fmtDur(m.medianHours)) + tile('Wiedereröffnet', pct(m.reopenRate)) +
+      tile('Changes erfolgreich', m.changeSuccess === null || m.changeSuccess === undefined ? '–' : pct(m.changeSuccess), m.changes + ' Changes') +
+      tile('CIs mit Verantwortlichem', m.cmdbOwnerShare === undefined ? '–' : pct(m.cmdbOwnerShare), m.cis + ' CIs') + '</div>' +
+      '<div class="matrix-wrap"><table class="sn-table"><thead><tr><th>Ereignistyp der Simulation</th><th>Tickets</th><th>je Monat</th><th>Anteil</th><th>Ø Lösungszeit</th><th>Self-Service</th><th>Häufigkeit für die Prognose</th></tr></thead><tbody>' +
+      EVENTS.map(e => { const b = m.byType[e.id]; if (!b) return ''; const f = e.perCompany ? b.perMonth : (b.perMonth / (state.intake.employees || 300) * 100); return '<tr><td>' + esc(e.title) + '</td><td>' + b.count + '</td><td>' + fmtNum(b.perMonth, 1) + '</td><td>' + pct(b.share) + '</td><td>' + fmtDur(b.mttr) + '</td><td>' + (b.count ? pct(b.selfService / b.count) : '–') + '</td><td>' + (b.count ? fmtNum(f, 1) + (e.perCompany ? ' je Unternehmen' : ' je 100 MA') : 'Standard') + '</td></tr>'; }).join('') +
+      '<tr><td>Nicht zugeordnet</td><td>' + m.byType.other.count + '</td><td>' + fmtNum(m.byType.other.perMonth, 1) + '</td><td>' + pct(m.byType.other.share) + '</td><td>' + fmtDur(m.byType.other.mttr) + '</td><td></td><td>geht in die Abdeckung ein</td></tr>' +
+      '</tbody></table></div>' +
+      (m.topTexts && m.topTexts.length ? '<p class="note" style="margin-top:8px">Häufigste Anliegen: ' + m.topTexts.slice(0, 6).map(t => esc(t.text) + ' (' + t.n + ')').join(' · ') + '</p>' : '');
+  }
+  function renderToolList() {
+    const it = state.intake, det = {}; it.detected.forEach(d => { det[d.id] = d; });
+    let html = '';
+    FIELDS.forEach(f => {
+      html += '<div class="tg">' + f.name + '</div>';
+      TOOL_CATALOG.filter(t => t.field === f.id).forEach(t => {
+        const d = det[t.id]; const on = it.manual[t.id] === true || (it.manual[t.id] !== false && d && !d.negated);
+        html += '<label class="' + (d ? (d.negated ? 'neg' : 'det') : '') + '"><input type="checkbox" data-tool="' + t.id + '"' + (on ? ' checked' : '') + '><span class="lbl">' + esc(t.label) + '</span><span class="stg">Stufe ' + t.stage + '</span></label>';
+      });
+    });
+    $('#toolList').innerHTML = html;
+  }
+  function renderQuestions() {
+    const it = state.intake;
+    $('#questionList').innerHTML = QUESTIONS.map(q => '<div class="q"><div class="qf">' + fieldName(q.field) + ' · Stufe ' + q.stage + '</div><div>' + esc(q.text) + '</div><div class="segments">' +
+      [['yes', 'Ja', ''], ['partly', 'Teilweise', 'partly'], ['no', 'Nein', 'no']].map(o => '<button type="button" class="' + o[2] + '" data-q="' + q.id + '" data-a="' + o[0] + '" aria-pressed="' + (it.answers[q.id] === o[0]) + '">' + o[1] + '</button>').join('') + '</div></div>').join('');
+  }
+  function renderProposal() {
+    const it = state.intake, p = intakeProposal();
+    const levels = {}; FIELDS.forEach(f => { levels[f.id] = p[f.id].final; });
+    $('#proposalCards').innerHTML = FIELDS.map(f => {
+      const x = p[f.id];
+      const ov = it.overrides[f.id];
+      return '<article class="cand"><div class="cand-head"><h4>' + f.name + '</h4><span class="badge ' + (x.confidence >= .7 ? 'ok' : x.confidence > 0 ? 'zero' : 'lock') + '">' + (x.confidence > 0 ? 'Sicherheit ' + Math.round(x.confidence * 100) + ' %' : 'keine Daten') + '</span></div>' +
+        '<div class="seg">' + [1, 2, 3, 4, 5].map(n => '<i class="' + (n <= x.final ? 'on' : '') + '"></i>').join('') + '</div>' +
+        '<div class="trans"><div class="st"><b>Abgeleitet · Stufe ' + x.stage + '</b>' + esc(f.short[x.stage - 1]) + '</div><span class="arrow" aria-hidden="true">→</span><div class="st next"><b>Übernommen</b><select data-override="' + f.id + '">' + [1, 2, 3, 4, 5].map(n => '<option value="' + n + '"' + (n === x.final ? ' selected' : '') + '>Stufe ' + n + ' · ' + esc(f.short[n - 1]) + '</option>').join('') + '</select>' + (ov ? '<small class="note">manuell gesetzt</small>' : '') + '</div></div>' +
+        '<div class="conf"><i style="width:' + Math.round(x.confidence * 100) + '%"></i></div>' +
+        (x.evidence.length ? '<ul class="ev">' + x.evidence.slice(0, 6).map(e => '<li class="' + (e.weight < 0 ? 'neg' : '') + '"><span class="src">' + e.source + '</span><span>' + esc(e.text) + '</span></li>').join('') + (x.evidence.length > 6 ? '<li><span class="src"></span><span class="note">' + (x.evidence.length - 6) + ' weitere Hinweise</span></li>' : '') + '</ul>' : '<p class="note">Keine Hinweise aus den Quellen. Stufe 1 angenommen; bitte prüfen oder im Interview beantworten.</p>') +
+        '</article>';
+    }).join('');
+    const cands = it.metrics && it.metrics.tickets ? window.Analysis.candidates(levels, Object.assign({}, state.params, { employees: it.employees || 300 })) : [];
+    const qw = window.Intake.quickWins(it.metrics, levels, cands);
+    $('#quickWinList').innerHTML = qw.length ? qw.map(w => '<li><span class="lv-badge l' + w.stage + '">' + w.stage + '</span><span class="pv-body"><span class="pv-title">' + esc(w.title) + '<span class="qw-badge">Aufwand ' + w.effort + '</span></span><span class="pv-sub">' + esc(w.why) + ' Handlungsfeld: ' + fieldName(w.field) + ', Stufe ' + w.stage + '.</span></span></li>').join('') : '<li><span class="pv-body"><span class="pv-sub">Quick Wins erscheinen, sobald Ticketdaten vorliegen.</span></span></li>';
+    $('#applyStatus').textContent = it.applied ? 'Übernommen. Änderungen hier werden erst mit erneutem Übernehmen wirksam.' : '';
+    renderSrcStatus();
+  }
+
+  function ingestFiles(files, kindHint) {
+    const reads = Array.from(files).map(f => new Promise(res => { const r = new FileReader(); r.onload = () => res({ name: f.name, text: String(r.result || '') }); r.onerror = () => res({ name: f.name, text: '' }); r.readAsText(f); }));
+    return Promise.all(reads).then(list => {
+      rawData = rawData || { incidents: [], requests: [], changes: [], cis: [] };
+      const added = [];
+      list.forEach(f => {
+        const rows = window.Connectors.parseAny(f.text); if (!rows.length) return;
+        const n = f.name.toLowerCase(); const cols = Object.keys(rows[0]).join(' ').toLowerCase();
+        let kind = kindHint;
+        if (!kind) {
+          if (/incident|inc[_-]|störung|stoerung/.test(n)) kind = 'incidents';
+          else if (/request|ritm|req|anfrage|sc_req/.test(n)) kind = 'requests';
+          else if (/change|chg|änderung/.test(n)) kind = 'changes';
+          else if (/cmdb|ci[_-]|asset|inventar|configuration/.test(n)) kind = 'cis';
+          else if (/sys_class_name|install_status|owned_by|managed_by/.test(cols)) kind = 'cis';
+          else if (/close_code|change_type|risk/.test(cols) && /^chg/i.test(String(rows[0].number || ''))) kind = 'changes';
+          else if (/^ritm|^req/i.test(String(rows[0].number || ''))) kind = 'requests';
+          else kind = 'incidents';
+        }
+        rawData[kind] = rawData[kind].concat(rows); added.push(kind + ': ' + rows.length + ' Zeilen aus ' + f.name);
+      });
+      recomputeMetrics();
+      toast(added.length ? added.join(' · ') : 'Keine Daten erkannt. Erwartet werden CSV oder JSON mit Kopfzeile.');
+    });
+  }
+  function recomputeMetrics() {
+    if (!rawData) return;
+    const m = window.Connectors.metrics(rawData, state.intake.employees || 300);
+    state.intake.metrics = m;
+    state.intake.counts = { incidents: rawData.incidents.length, requests: rawData.requests.length, changes: rawData.changes.length, cis: rawData.cis.length };
+    state.intake.applied = false;
+    saveIntake(); renderSnResult(); renderProposal();
+  }
+  function loadDemo() {
+    const d = window.Connectors.demoData(42);
+    rawData = { incidents: d.incidents, requests: d.requests, changes: d.changes, cis: d.cis };
+    state.intake.customer = d.customer; state.intake.employees = d.employees; state.intake.docText = d.docs;
+    state.intake.detected = window.Intake.detectTools(d.docs); state.intake.manual = {}; state.intake.overrides = {};
+    state.intake.answers = { q_inventory: 'yes', q_zerotouch: 'no', q_roles: 'partly', q_hr: 'no', q_monitoring: 'yes', q_e2e: 'no', q_scripts: 'yes', q_workflow: 'no', q_itsm: 'yes', q_portal: 'partly', q_patch: 'yes', q_edr: 'partly', q_roles_org: 'yes', q_autoeng: 'no' };
+    $('#docText').value = d.docs;
+    recomputeMetrics(); renderIntake();
+    toast('Beispielkunde geladen: ' + d.customer);
+  }
+  function detectFromText() {
+    const text = $('#docText').value;
+    state.intake.docText = text;
+    state.intake.detected = window.Intake.detectTools(text);
+    state.intake.applied = false; saveIntake();
+    renderToolList(); renderProposal();
+    const n = state.intake.detected.filter(d => !d.negated).length, g = state.intake.detected.filter(d => d.negated).length;
+    $('#docStatus').textContent = n + ' Werkzeuge erkannt' + (g ? ', ' + g + ' als nicht vorhanden' : '') + '.';
+  }
+  function applyIntake() {
+    const it = state.intake, p = intakeProposal();
+    FIELDS.forEach(f => { state.assessment[f.id] = p[f.id].final; });
+    state.assessed = true; state.useAssessment = true;
+    store.set('zt.assessment', state.assessment); store.set('zt.assessed', true); store.set('zt.useAssessment', true);
+    state.params.employees = it.employees || 300;
+    const cal = window.Intake.calibrate(it.metrics, it.employees);
+    const fo = {};
+    if (cal) { EVENTS.forEach(e => { if (cal.freq[e.id] !== null && cal.freq[e.id] !== undefined) { e.freq = Math.round(cal.freq[e.id] * 100) / 100; fo[e.id] = e.freq; } }); state.params.coverage = cal.coverage; }
+    store.set('zt.freq', fo); store.set('zt.params', state.params);
+    const pg = $('#paramsGrid'); if (pg) { pg.innerHTML = ''; $('#freqGrid').innerHTML = ''; }
+    it.applied = true; saveIntake();
+    applyBase(); state.levels = Object.assign({}, state.base); store.set('zt.levels', state.levels);
+    renderPlan(); renderMatrix(); renderProposal(); updateStepper();
+    toast('Ist-Bild übernommen: Ausgangslage, Mitarbeiterzahl' + (cal ? ' und Häufigkeiten aus ' + it.metrics.tickets + ' Tickets' : '') + ' gesetzt.');
+  }
+  function profileJSON() {
+    const it = state.intake; const p = intakeProposal(); const levels = {}; FIELDS.forEach(f => { levels[f.id] = p[f.id].final; });
+    return JSON.stringify({ version: 1, customer: it.customer, employees: it.employees, exportedAt: new Date().toISOString(), levels, overrides: it.overrides, answers: it.answers, detected: it.detected, manual: it.manual, docText: it.docText, metrics: it.metrics, counts: it.counts }, null, 2);
+  }
+  function importProfile(text) {
+    try {
+      const j = JSON.parse(text);
+      state.intake = Object.assign({ customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false }, { customer: j.customer || '', employees: j.employees || 300, metrics: j.metrics || null, counts: j.counts || null, docText: j.docText || '', detected: j.detected || [], manual: j.manual || {}, answers: j.answers || {}, overrides: j.overrides || {} });
+      rawData = null; saveIntake(); renderIntake(); $('#docText').value = state.intake.docText; toast('Profil eingelesen' + (j.customer ? ': ' + j.customer : '') + '.');
+    } catch (e) { toast('Die Datei ist kein gültiges Profil.'); }
+  }
+  async function connectServiceNow() {
+    const cfg = { instance: $('#snInstance').value.trim(), user: $('#snUser').value, password: $('#snPass').value, token: $('#snToken').value.trim(), months: parseInt($('#snMonths').value, 10) || 6 };
+    if (!cfg.instance) { toast('Bitte die Instanz-Adresse angeben.'); return; }
+    if (!cfg.token && !(cfg.user && cfg.password)) { toast('Bitte Benutzer und Passwort oder ein Token angeben.'); return; }
+    const st = $('#snStatus'); st.textContent = 'Verbinde …';
+    try {
+      const data = await window.Connectors.fetchServiceNow(cfg, msg => { st.textContent = msg; });
+      rawData = data; recomputeMetrics(); st.textContent = 'Geladen: ' + data.incidents.length + ' Incidents, ' + data.requests.length + ' Requests, ' + data.changes.length + ' Changes, ' + data.cis.length + ' CIs.';
+    } catch (e) {
+      st.textContent = 'Verbindung fehlgeschlagen: ' + (e && e.message ? e.message : e) + '. Prüfen Sie CORS-Regel, Adresse und Rechte, oder importieren Sie einen Export.';
+    }
+  }
+  function bindIntake() {
+    $('#custName').addEventListener('input', e => { state.intake.customer = e.target.value; saveIntake(); });
+    $('#custEmployees').addEventListener('change', e => { state.intake.employees = Math.max(10, parseInt(e.target.value, 10) || 300); state.intake.applied = false; saveIntake(); if (rawData) recomputeMetrics(); else { renderSnResult(); renderProposal(); } });
+    $('#demoBtn').addEventListener('click', loadDemo);
+    $('#snFiles').addEventListener('change', e => { ingestFiles(e.target.files); e.target.value = ''; });
+    $$('[data-sn]').forEach(inp => inp.addEventListener('change', e => { ingestFiles(e.target.files, e.target.dataset.sn); e.target.value = ''; }));
+    const dz = $('#dropZone');
+    ['dragenter', 'dragover'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.add('over'); }));
+    ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('over'); }));
+    dz.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files.length) ingestFiles(e.dataTransfer.files); });
+    $('#snConnectBtn').addEventListener('click', connectServiceNow);
+    $('#detectBtn').addEventListener('click', detectFromText);
+    $('#docText').addEventListener('change', () => { state.intake.docText = $('#docText').value; saveIntake(); });
+    $('#docFiles').addEventListener('change', e => {
+      const reads = Array.from(e.target.files).map(f => new Promise(res => { const r = new FileReader(); r.onload = () => res(String(r.result || '')); r.onerror = () => res(''); r.readAsText(f); }));
+      Promise.all(reads).then(texts => { $('#docText').value = ($('#docText').value + '\n\n' + texts.join('\n\n')).trim(); detectFromText(); }); e.target.value = '';
+    });
+    $('#toolList').addEventListener('change', e => { const id = e.target.dataset && e.target.dataset.tool; if (!id) return; state.intake.manual[id] = e.target.checked; state.intake.applied = false; saveIntake(); renderToolList(); renderProposal(); });
+    $('#questionList').addEventListener('click', e => { const b = e.target.closest('[data-q]'); if (!b) return; state.intake.answers[b.dataset.q] = b.dataset.a; state.intake.applied = false; saveIntake(); renderQuestions(); renderProposal(); });
+    $('#proposalCards').addEventListener('change', e => { const f = e.target.dataset && e.target.dataset.override; if (!f) return; state.intake.overrides[f] = parseInt(e.target.value, 10); state.intake.applied = false; saveIntake(); renderProposal(); });
+    $('#applyIntakeBtn').addEventListener('click', applyIntake);
+    $('#intakeNextBtn').addEventListener('click', () => { if (!state.intake.applied && (state.intake.metrics || state.intake.detected.length || Object.keys(state.intake.answers).length)) applyIntake(); showScreen('plan'); });
+    $('#intakeSkipBtn').addEventListener('click', () => { state.useAssessment = false; store.set('zt.useAssessment', false); applyBase(); showScreen('plan'); });
+    $('#profileCopyBtn').addEventListener('click', () => { const txt = profileJSON(); const ok = () => toast('Profil in die Zwischenablage kopiert.'); if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok, () => toast('Kopieren nicht möglich.')); else toast('Kopieren nicht möglich.'); });
+    $('#profileImport').addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => importProfile(String(r.result || '')); r.readAsText(f); e.target.value = ''; });
+  }
+
+  /* ---------- Prognose: Quick Wins und Zeitplan ---------- */
+  function renderQuickWinsAnalysis(levels, cands) {
+    const it = state.intake;
+    const qw = window.Intake.quickWins(it.applied ? it.metrics : null, levels, cands);
+    $('#anaQuickWins').innerHTML = qw.length ? '<div class="road-summary" style="margin-bottom:12px"><b>Quick Wins' + (it.applied && it.metrics ? ' aus den Daten von ' + esc(it.customer || 'diesem Kunden') : '') + ':</b> ' + qw.map(w => esc(w.title)).join(' · ') + '</div>' : '';
+  }
+  function pathChart(sch) {
+    const steps = sch.steps; if (!steps.length) return '';
+    const months = Math.ceil(sch.totalMonths / 3) * 3 || 3;
+    const W = 720, rowH = 22, L = 10, R = 10, T = 22, labelW = 250;
+    const H = T + steps.length * rowH + 10;
+    const x = m => L + labelW + (m / months) * (W - L - R - labelW);
+    const now = new Date(); const startY = now.getFullYear(), startQ = Math.floor(now.getMonth() / 3);
+    let s = '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Zeitplan der Roadmap">';
+    for (let q = 0; q * 3 <= months; q++) {
+      const qi = startQ + q; const y = startY + Math.floor(qi / 4); const ql = 'Q' + (qi % 4 + 1) + ' ' + y;
+      s += '<line class="gline" x1="' + x(q * 3) + '" x2="' + x(q * 3) + '" y1="' + (T - 6) + '" y2="' + H + '"/>';
+      if (q * 3 < months) s += '<text class="gq" x="' + (x(q * 3) + 3) + '" y="' + (T - 9) + '">' + ql + '</text>';
+    }
+    steps.forEach((st, i) => {
+      const y = T + i * rowH;
+      const prep = st.stepSaving <= 0;
+      s += '<text class="gtext" x="' + L + '" y="' + (y + 14) + '">' + esc((i + 1) + '. ' + st.field.name + ' → ' + st.stage) + '</text>';
+      s += '<rect class="gbar' + (prep ? ' prep' : '') + '" x="' + x(st.start) + '" y="' + (y + 4) + '" width="' + Math.max(2, x(st.end) - x(st.start)) + '" height="' + (rowH - 8) + '" rx="3"><title>' + esc(st.field.name + ' auf Stufe ' + st.stage + ': Monat ' + Math.round(st.start) + ' bis ' + Math.round(st.end) + (prep ? ' (Voraussetzung)' : ', spart ' + fmtEur(st.stepSaving) + ' je Jahr')) + '</title></rect>';
+    });
+    s += '</svg>';
+    return s;
+  }
+  function renderPath(road, L) {
+    if (!road.steps.length) { $('#pathSummary').textContent = 'Kein Zeitplan ohne Roadmap.'; $('#pathChart').innerHTML = ''; return; }
+    const sch = window.Intake.schedule(road.steps, 2, L);
+    const last = road.steps[road.steps.length - 1];
+    const years = sch.totalMonths / 12;
+    const perYear = last.cumInvest / Math.max(1, years);
+    const end = new Date(); end.setMonth(end.getMonth() + Math.round(sch.totalMonths));
+    $('#pathSummary').innerHTML = '<b>Dauer etwa ' + Math.round(sch.totalMonths) + ' Monate</b> (bis ' + end.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }) + ') in zwei parallelen Arbeitssträngen. Investition ' + fmtEur(last.cumInvest) + ', das sind etwa ' + fmtEur(perYear) + ' je Jahr. Nach Abschluss sinken die jährlichen Kosten um ' + fmtEur(last.cumNet) + ' netto. ' + (state.intake.applied && state.intake.customer ? 'Berechnet für ' + esc(state.intake.customer) + ' mit ' + state.params.employees + ' Mitarbeitern.' : '');
+    $('#pathChart').innerHTML = pathChart(sch);
+  }
 
   /* ---------- Sonstiges ---------- */
   let toastTimer = null;
@@ -747,7 +1001,9 @@
       const cell = t.closest('.cell'); if (cell) { state.assessment[cell.dataset.afield] = parseInt(cell.dataset.astage, 10); state.assessed = true; store.set('zt.assessment', state.assessment); store.set('zt.assessed', true); renderMatrix(); return; }
       const tg = t.closest('[data-target]'); if (tg) { state.target = parseInt(tg.dataset.target, 10); store.set('zt.target', state.target); renderMatrix(); return; }
     });
-    $('#startBtn').addEventListener('click', () => showScreen('plan'));
+    $('#startBtn').addEventListener('click', () => showScreen('intake'));
+    $('#startPlanBtn').addEventListener('click', () => showScreen('plan'));
+    bindIntake();
     $('#resetAllBtn').addEventListener('click', async () => { if (await ask('Planung, Durchläufe, Auswertung, Standortbestimmung und Annahmen werden gelöscht. Die Simulation beginnt von vorn. Fortfahren?')) resetAll(); });
     $('#analysisBtn').addEventListener('click', () => showScreen('analysis'));
     $('#resultAnalysisBtn').addEventListener('click', () => { endHandled = true; showScreen('analysis'); });
