@@ -671,3 +671,21 @@ svg.chart .gtext { fill: var(--fg); font-family: var(--font-body); font-size: 9.
 svg.chart .gq { fill: var(--fg-3); font-size: 9px; }
 svg.chart .gline { stroke: var(--line); }
 .qw-badge { font-size: .68rem; padding: 2px 7px; border-radius: 999px; background: var(--agent-soft); color: var(--agent-ink); font-weight: 600; margin-left: 6px; }
+
+/* ---------- Ist-Bild: Aufdecken ---------- */
+.overlay-card.istbild { min-height: 60vh; }
+.reveal-run { padding: 40px 0 20px; max-width: 640px; margin: 0 auto; text-align: left; }
+.reveal-run h2 { font-size: 1.6rem; margin: 6px 0 20px; }
+.reveal-steps { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.reveal-steps li { display: grid; grid-template-columns: 28px 1fr; gap: 12px; align-items: center; font-size: .95rem; color: var(--fg-3); opacity: 0; transform: translateY(6px); transition: opacity .35s, transform .35s, color .35s; }
+.reveal-steps li.show { opacity: 1; transform: none; }
+.reveal-steps li.done { color: var(--fg); }
+.reveal-steps li i { width: 22px; height: 22px; border-radius: 50%; border: 2px solid var(--line-strong); display: grid; place-items: center; font-size: .7rem; color: #fff; }
+.reveal-steps li.done i { background: var(--agent); border-color: var(--agent); }
+.reveal-steps li.done i::after { content: "✓"; }
+.reveal-steps li.active i { border-color: var(--accent); animation: pulse 1s ease-in-out infinite; }
+.reveal-result { animation: cardIn .6s ease-out; }
+.reveal-result .budget-box .hero-num { font-size: 2.6rem; margin: 4px 0 8px; }
+.reveal-result .budget-box .fieldbars { margin-top: 4px; }
+.reveal-result .budget-box .fieldbar { grid-template-columns: 130px 1fr 28px; font-size: .74rem; }
+#intakeReady { align-self: center; }

@@ -11,7 +11,7 @@
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
   const MS_PER_MIN = 170;   // Echtzeit je simulierter Minute bei 1×
-  const ROUTES = { start: 'start', intake: 'ist-aufnahme', plan: 'planen', run: 'arbeitstag', result: 'auswertung', analysis: 'prognose', levels: 'reifegrade', path: 'standort' };
+  const ROUTES = { start: 'start', intake: 'ist-aufnahme', istbild: 'ist-bild', plan: 'planen', run: 'arbeitstag', result: 'auswertung', analysis: 'prognose', levels: 'reifegrade', path: 'standort' };
   const STEP_NAMES = { intake: 'Ist-Aufnahme', plan: 'Planung', run: 'Arbeitstag', result: 'Auswertung', analysis: 'Prognose' };
 
   const STORAGE_VERSION = 2;   // Erhöhen setzt den gespeicherten Zustand aller Nutzer beim nächsten Laden zurück
@@ -124,7 +124,7 @@
     if (replace) history.replaceState(null, '', hash); else history.pushState(null, '', hash);
   }
   function updateStepper() {
-    const active = state.view === 'sim' ? state.screen : null;
+    const active = state.view === 'sim' ? (state.screen === 'istbild' ? 'intake' : state.screen) : null;
     $$('#steps [data-step]').forEach(b => {
       const s = b.dataset.step;
       if (s === active) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
@@ -133,7 +133,7 @@
     });
     const back = $('#backBtn');
     if (state.view !== 'sim') {
-      const lbl = { start: 'Zum Start', intake: 'Zurück zur Ist-Aufnahme', plan: 'Zurück zur Planung', run: state.ended ? 'Zurück zur Auswertung' : 'Zurück zum Arbeitstag', result: 'Zurück zur Auswertung', analysis: 'Zurück zur Prognose' }[state.returnScreen] || 'Zur Simulation';
+      const lbl = { start: 'Zum Start', intake: 'Zurück zur Ist-Aufnahme', istbild: 'Zurück zum Ist-Bild', plan: 'Zurück zur Planung', run: state.ended ? 'Zurück zur Auswertung' : 'Zurück zum Arbeitstag', result: 'Zurück zur Auswertung', analysis: 'Zurück zur Prognose' }[state.returnScreen] || 'Zur Simulation';
       back.textContent = lbl; back.hidden = false;
     } else back.hidden = true;
   }
@@ -143,12 +143,13 @@
   }
   function showScreen(name, opts) {
     state.screen = name;
-    ['start', 'intake', 'plan', 'result', 'analysis'].forEach(s => { $('#screen-' + s).hidden = s !== name; });
+    ['start', 'intake', 'istbild', 'plan', 'result', 'analysis'].forEach(s => { $('#screen-' + s).hidden = s !== name; });
     const hud = $('#hud');
     hud.classList.toggle('dim', name !== 'run');
     hud.inert = name !== 'run';
     document.body.classList.toggle('in-run', name === 'run');
     if (name === 'intake') renderIntake();
+    if (name === 'istbild' && !(opts && opts.animate)) { $('#revealRun').hidden = true; $('#revealResult').hidden = false; renderProposal(); }
     if (name === 'plan') renderPlan();
     if (name === 'analysis') renderAnalysis();
     updateStepper();
@@ -738,7 +739,16 @@
     const it = state.intake;
     $('#custName').value = it.customer || '';
     $('#custEmployees').value = it.employees || 300;
-    renderSrcStatus(); renderSnResult(); renderToolList(); renderQuestions(); renderProposal();
+    renderSrcStatus(); renderSnResult(); renderToolList(); renderQuestions(); renderReady();
+  }
+  function intakeHasData() { const it = state.intake; return !!((it.metrics && it.metrics.tickets) || it.detected.length || Object.keys(it.manual).some(k => it.manual[k]) || Object.keys(it.answers).length); }
+  function renderReady() {
+    const it = state.intake, parts = [];
+    if (it.metrics && it.metrics.tickets) parts.push(it.metrics.tickets + ' Tickets');
+    const tools = it.detected.filter(d => !d.negated).length + Object.keys(it.manual).filter(k => it.manual[k]).length; if (tools) parts.push(tools + ' Werkzeuge');
+    const qs = Object.keys(it.answers).length; if (qs) parts.push(qs + ' Antworten');
+    $('#intakeReady').textContent = parts.length ? 'Bereit: ' + parts.join(', ') + '.' : 'Noch keine Quelle. Die Analyse nimmt dann Stufe 1 in allen Feldern an.';
+    renderSrcStatus();
   }
   function renderSrcStatus() {
     const it = state.intake, c = it.counts || {};
@@ -801,8 +811,40 @@
     const cands = it.metrics && it.metrics.tickets ? window.Analysis.candidates(levels, Object.assign({}, state.params, { employees: it.employees || 300 })) : [];
     const qw = window.Intake.quickWins(it.metrics, levels, cands);
     $('#quickWinList').innerHTML = qw.length ? qw.map(w => '<li><span class="lv-badge l' + w.stage + '">' + w.stage + '</span><span class="pv-body"><span class="pv-title">' + esc(w.title) + '<span class="qw-badge">Aufwand ' + w.effort + '</span></span><span class="pv-sub">' + esc(w.why) + ' Handlungsfeld: ' + fieldName(w.field) + ', Stufe ' + w.stage + '.</span></span></li>').join('') : '<li><span class="pv-body"><span class="pv-sub">Quick Wins erscheinen, sobald Ticketdaten vorliegen.</span></span></li>';
-    $('#applyStatus').textContent = it.applied ? 'Übernommen. Änderungen hier werden erst mit erneutem Übernehmen wirksam.' : '';
+    $('#applyStatus').textContent = it.applied ? 'Bereits übernommen. Änderungen werden mit erneutem Übernehmen wirksam.' : '';
+    const avg = FIELDS.reduce((s, f) => s + levels[f.id], 0) / FIELDS.length;
+    const mn = Math.min.apply(null, FIELDS.map(f => levels[f.id]));
+    const weakest = FIELDS.filter(f => levels[f.id] === mn).map(f => f.name);
+    $('#istbildTitle').textContent = 'Ist-Bild' + (it.customer ? ' von ' + it.customer : '');
+    const src = []; if (it.metrics && it.metrics.tickets) src.push(it.metrics.tickets + ' Tickets aus ' + it.metrics.months.toFixed(1) + ' Monaten'); const tl = it.detected.filter(d => !d.negated).length + Object.keys(it.manual).filter(k => it.manual[k]).length; if (tl) src.push(tl + ' erkannte Werkzeuge'); const qs = Object.keys(it.answers).length; if (qs) src.push(qs + ' Interviewantworten');
+    $('#istbildIntro').textContent = (src.length ? 'Abgeleitet aus ' + src.join(', ') + '. ' : 'Ohne Quellen wird Stufe 1 angenommen. ') + 'Die Reife wird durch das schwächste Feld begrenzt: ' + weakest.join(', ') + ' auf Stufe ' + mn + '.';
+    $('#istbildHero').innerHTML = fmtNum(avg, 1) + '<small>von 5</small>';
+    $('#istbildBars').innerHTML = FIELDS.map(f => '<div class="fieldbar' + (levels[f.id] === mn && weakest.length < FIELDS.length ? ' bottleneck' : '') + '"><div class="nm">' + f.name + '</div><div class="seg">' + [1, 2, 3, 4, 5].map(n => '<i class="' + (n <= levels[f.id] ? 'on' : '') + '"></i>').join('') + '</div><div class="v">' + levels[f.id] + '</div></div>').join('');
     renderSrcStatus();
+  }
+  function startIstbild() {
+    const it = state.intake;
+    showScreen('istbild', { animate: true });
+    const run = $('#revealRun'), res = $('#revealResult');
+    const reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const lines = [];
+    if (it.metrics && it.metrics.tickets) lines.push(it.metrics.tickets + ' Tickets gelesen und ' + (it.metrics.tickets - it.metrics.byType.other.count) + ' den elf Ereignistypen zugeordnet');
+    if (it.metrics && it.metrics.cis) lines.push(it.metrics.cis + ' Konfigurationselemente der CMDB geprüft');
+    const tl = it.detected.length; if (tl) lines.push(tl + ' Werkzeuge in der Dokumentation erkannt, davon ' + it.detected.filter(d => d.negated).length + ' als nicht vorhanden');
+    const qs = Object.keys(it.answers).length; if (qs) lines.push(qs + ' Interviewantworten ausgewertet');
+    lines.push('Signale je Handlungsfeld zusammengeführt und Reifegrad abgeleitet');
+    lines.push('Quick Wins aus dem Ticketaufkommen bestimmt');
+    run.hidden = false; res.hidden = true;
+    $('#revealSteps').innerHTML = lines.map(l => '<li><i></i><span>' + esc(l) + '</span></li>').join('');
+    const items = $$('#revealSteps li');
+    if (reduce) { items.forEach(li => li.classList.add('show', 'done')); run.hidden = true; res.hidden = false; renderProposal(); return; }
+    let i = 0;
+    const step = () => {
+      if (i > 0) { items[i - 1].classList.remove('active'); items[i - 1].classList.add('done'); }
+      if (i < items.length) { items[i].classList.add('show', 'active'); i++; setTimeout(step, 550); }
+      else setTimeout(() => { run.hidden = true; res.hidden = false; renderProposal(); window.scrollTo({ top: 0 }); focusHeading(res); }, 350);
+    };
+    step();
   }
 
   function ingestFiles(files, kindHint) {
@@ -836,7 +878,7 @@
     state.intake.metrics = m;
     state.intake.counts = { incidents: rawData.incidents.length, requests: rawData.requests.length, changes: rawData.changes.length, cis: rawData.cis.length };
     state.intake.applied = false;
-    saveIntake(); renderSnResult(); renderProposal();
+    saveIntake(); renderSnResult(); renderReady();
   }
   function loadDemo() {
     const d = window.Connectors.demoData(42);
@@ -853,7 +895,7 @@
     state.intake.docText = text;
     state.intake.detected = window.Intake.detectTools(text);
     state.intake.applied = false; saveIntake();
-    renderToolList(); renderProposal();
+    renderToolList(); renderReady();
     const n = state.intake.detected.filter(d => !d.negated).length, g = state.intake.detected.filter(d => d.negated).length;
     $('#docStatus').textContent = n + ' Werkzeuge erkannt' + (g ? ', ' + g + ' als nicht vorhanden' : '') + '.';
   }
@@ -898,7 +940,7 @@
   }
   function bindIntake() {
     $('#custName').addEventListener('input', e => { state.intake.customer = e.target.value; saveIntake(); });
-    $('#custEmployees').addEventListener('change', e => { state.intake.employees = Math.max(10, parseInt(e.target.value, 10) || 300); state.intake.applied = false; saveIntake(); if (rawData) recomputeMetrics(); else { renderSnResult(); renderProposal(); } });
+    $('#custEmployees').addEventListener('change', e => { state.intake.employees = Math.max(10, parseInt(e.target.value, 10) || 300); state.intake.applied = false; saveIntake(); if (rawData) recomputeMetrics(); else { renderSnResult(); renderReady(); } });
     $('#demoBtn').addEventListener('click', loadDemo);
     $('#snFiles').addEventListener('change', e => { ingestFiles(e.target.files); e.target.value = ''; });
     $$('[data-sn]').forEach(inp => inp.addEventListener('change', e => { ingestFiles(e.target.files, e.target.dataset.sn); e.target.value = ''; }));
@@ -913,11 +955,13 @@
       const reads = Array.from(e.target.files).map(f => new Promise(res => { const r = new FileReader(); r.onload = () => res(String(r.result || '')); r.onerror = () => res(''); r.readAsText(f); }));
       Promise.all(reads).then(texts => { $('#docText').value = ($('#docText').value + '\n\n' + texts.join('\n\n')).trim(); detectFromText(); }); e.target.value = '';
     });
-    $('#toolList').addEventListener('change', e => { const id = e.target.dataset && e.target.dataset.tool; if (!id) return; state.intake.manual[id] = e.target.checked; state.intake.applied = false; saveIntake(); renderToolList(); renderProposal(); });
-    $('#questionList').addEventListener('click', e => { const b = e.target.closest('[data-q]'); if (!b) return; state.intake.answers[b.dataset.q] = b.dataset.a; state.intake.applied = false; saveIntake(); renderQuestions(); renderProposal(); });
+    $('#toolList').addEventListener('change', e => { const id = e.target.dataset && e.target.dataset.tool; if (!id) return; state.intake.manual[id] = e.target.checked; state.intake.applied = false; saveIntake(); renderToolList(); renderReady(); });
+    $('#questionList').addEventListener('click', e => { const b = e.target.closest('[data-q]'); if (!b) return; state.intake.answers[b.dataset.q] = b.dataset.a; state.intake.applied = false; saveIntake(); renderQuestions(); renderReady(); });
     $('#proposalCards').addEventListener('change', e => { const f = e.target.dataset && e.target.dataset.override; if (!f) return; state.intake.overrides[f] = parseInt(e.target.value, 10); state.intake.applied = false; saveIntake(); renderProposal(); });
-    $('#applyIntakeBtn').addEventListener('click', applyIntake);
-    $('#intakeNextBtn').addEventListener('click', () => { if (!state.intake.applied && (state.intake.metrics || state.intake.detected.length || Object.keys(state.intake.answers).length)) applyIntake(); showScreen('plan'); });
+    $('#applyIntakeBtn').addEventListener('click', () => { applyIntake(); showScreen('plan'); });
+    $('#intakeNextBtn').addEventListener('click', startIstbild);
+    $('#istbildBackBtn').addEventListener('click', () => showScreen('intake'));
+    $('#profileCopyBtn2').addEventListener('click', () => $('#profileCopyBtn').click());
     $('#intakeSkipBtn').addEventListener('click', () => { state.useAssessment = false; store.set('zt.useAssessment', false); applyBase(); showScreen('plan'); });
     $('#profileCopyBtn').addEventListener('click', () => { const txt = profileJSON(); const ok = () => toast('Profil in die Zwischenablage kopiert.'); if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok, () => toast('Kopieren nicht möglich.')); else toast('Kopieren nicht möglich.'); });
     $('#profileImport').addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => importProfile(String(r.result || '')); r.readAsText(f); e.target.value = ''; });
