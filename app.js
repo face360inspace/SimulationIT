@@ -1184,13 +1184,13 @@
 
   /* ---------- Ziele ---------- */
   const GOAL_DEFS = [
-    { id: 'level', name: 'Zielstufe in allen Handlungsfeldern', unit: 'Stufe', min: 2, max: 5, step: 1, note: 'Jedes Feld erreicht mindestens diese Stufe. Die Reife wird durch das schwächste Feld begrenzt.' },
-    { id: 'tickets', name: 'Tickets senken um', unit: '%', min: 10, max: 95, step: 5, note: 'Je Jahr, gegenüber dem Zwilling heute.' },
-    { id: 'user', name: 'Ausfallzeit der Mitarbeiter senken um', unit: '%', min: 10, max: 99, step: 5, note: 'Produktivitätsverlust je Jahr.' },
-    { id: 'mttr', name: 'Lösungszeit höchstens', unit: 'h', min: 0.1, max: 48, step: 0.5, note: 'Durchschnitt über alle Ereignisse, gewichtet nach Häufigkeit.' },
-    { id: 'auto', name: 'Anteil ohne menschlichen Eingriff mindestens', unit: '%', min: 10, max: 100, step: 5, note: 'Verhindert oder autonom gelöst.' },
-    { id: 'cost', name: 'Jährliche Kosten senken um', unit: '%', min: 10, max: 95, step: 5, note: 'IT-Aufwand, Ausfall, Tickets und bei OT Stillstand zusammen.' },
-    { id: 'ot', name: 'Produktionsstillstand senken um', unit: '%', min: 10, max: 99, step: 5, note: 'Nur mit OT-Erweiterung.', ot: true }
+    { id: 'level', name: 'Zielstufe in allen Handlungsfeldern', unit: 'Stufe', min: 2, max: 5, step: 1, note: 'Jedes Handlungsfeld erreicht mindestens diese Stufe.' },
+    { id: 'tickets', name: 'Tickets senken um', unit: '%', min: 10, max: 95, step: 5, note: 'Ticketaufkommen je Jahr gegenüber heute.' },
+    { id: 'user', name: 'Ausfallzeit der Mitarbeiter senken um', unit: '%', min: 10, max: 99, step: 5, note: 'Produktivitätsverlust je Jahr gegenüber heute.' },
+    { id: 'mttr', name: 'Lösungszeit höchstens', unit: 'h', min: 0.1, max: 48, step: 0.5, note: 'Durchschnittliche Lösungszeit über alle Ereignisse.' },
+    { id: 'auto', name: 'Anteil ohne menschlichen Eingriff mindestens', unit: '%', min: 10, max: 100, step: 5, note: 'Anteil der Ereignisse, die verhindert oder autonom gelöst werden.' },
+    { id: 'cost', name: 'Jährliche Kosten senken um', unit: '%', min: 10, max: 95, step: 5, note: 'IT-Aufwand, Ausfall, Tickets und bei OT Stillstand, gegenüber heute.' },
+    { id: 'ot', name: 'Produktionsstillstand senken um', unit: '%', min: 10, max: 99, step: 5, note: 'Stillstandzeit je Jahr gegenüber heute.', ot: true }
   ];
   const saveGoals = () => store.set('zt.goals', state.goals);
   function simStartLevels() { return state.intake.applied ? Object.assign({}, state.base) : (intakeHasData() ? twinLevels() : Object.assign({}, state.base)); }
@@ -1221,12 +1221,14 @@
     $('#goalBudget').value = G.budget;
     $('#budgetModeHint').textContent = G.budgetMode === 'available' ? 'Die Simulation sucht den besten Pfad innerhalb dieses Budgets und zeigt, wie weit er trägt.' : 'Die Simulation ermittelt das nötige Budget und erstellt in Schritt 5 die Argumentation für den Antrag.';
     $('#goalLanes').value = G.lanes || 0; $('#goalPerYear').value = G.perYear || 0;
-    const base = metricsOf(simStartLevels());
+    const hasTwin = !!state.intake.applied;
+    const base = hasTwin ? metricsOf(simStartLevels()) : null;
+    $('#goalsTwinNote').textContent = hasTwin ? 'Der Digital Twin liegt vor: Zu jedem Ziel steht der heutige Wert und der daraus abgeleitete Zielwert.' : 'Relative Ziele beziehen sich auf den Zustand heute. Den liefert der Digital Twin in Schritt 3; die Prüfung der Ziele folgt in Schritt 4.';
     $('#goalList').innerHTML = GOAL_DEFS.filter(g => !g.ot || state.ot).map(g => {
-      const it = G.items[g.id]; const t = goalTarget(g, base);
+      const it = G.items[g.id]; const t = base ? goalTarget(g, base) : null;
       return '<div class="goal' + (it.on ? '' : ' off') + '"><div class="gh"><b>' + g.name + '</b><label class="switch"><input type="checkbox" data-goal-on="' + g.id + '"' + (it.on ? ' checked' : '') + '><span></span></label></div>' +
-        '<div class="gv"><span>Heute im Zwilling: <b>' + t.fmt(t.cur(base)) + '</b></span><span><input type="number" data-goal-v="' + g.id + '" value="' + it.v + '" min="' + g.min + '" max="' + g.max + '" step="' + g.step + '"> ' + g.unit + '</span></div>' +
-        '<div class="gnote">Ziel: ' + t.fmt(t.target) + '. ' + g.note + '</div></div>';
+        '<div class="gv"><span>' + g.note + '</span><span><input type="number" data-goal-v="' + g.id + '" value="' + it.v + '" min="' + g.min + '" max="' + g.max + '" step="' + g.step + '"> ' + g.unit + '</span></div>' +
+        (t ? '<div class="gnote twin">Aus dem Digital Twin: heute ' + t.fmt(t.cur(base)) + ', Zielwert ' + t.fmt(t.target) + '.</div>' : '') + '</div>';
     }).join('');
     renderGoalsSummary();
   }
