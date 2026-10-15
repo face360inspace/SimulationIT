@@ -27,7 +27,7 @@
   const allOne = () => { const o = {}; FIELDS.forEach(f => { o[f.id] = 1; }); return o; };
   const state = {
     view: 'sim', screen: 'start', returnScreen: 'start', evaluated: false, ot: store.get('zt.ot', false), twinRun: false, twinLast: null, simResult: null, calib: store.get('zt.calib', null), twinAck: store.get('zt.twinAck', null), twinQuality: null,
-    goals: Object.assign({ touched: false, horizon: 36, budgetMode: 'needed', budget: 300000, lanes: 0, perYear: 0, items: { level: { on: true, v: 4 }, tickets: { on: true, v: 50 }, user: { on: true, v: 70 }, mttr: { on: true, v: 4 }, auto: { on: false, v: 50 }, cost: { on: false, v: 50 }, ot: { on: true, v: 70 } } }, store.get('zt.goals', {})),
+    goals: Object.assign({ touched: false, horizon: 36, budgetMode: 'needed', budget: 300000, lanes: 0, perYear: 0, cap: { fte: 0, share: 0.2, partners: 0 }, items: { level: { on: true, v: 4 }, tickets: { on: true, v: 50 }, user: { on: true, v: 70 }, mttr: { on: true, v: 4 }, auto: { on: false, v: 50 }, cost: { on: false, v: 50 }, ot: { on: true, v: 70 } } }, store.get('zt.goals', {})),
     budgetIdx: store.get('zt.budget', 1),
     useAssessment: store.get('zt.useAssessment', false),
     base: allOne(), levels: allOne(),
@@ -734,7 +734,7 @@
     EVENTS.forEach(e => { e.freq = DEFAULT_FREQ[e.id]; });
     state.intake = { customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false, extra: {}, agentAnswers: {} }; rawData = null; rawExtra = {};
     state.calib = null; window.Analysis.setCalibration(null); window.Analysis.setUncertainty(0); state.twinAck = null; state.twinQuality = null;
-    state.simResult = null; state.goals = { touched: false, horizon: 36, budgetMode: 'needed', budget: 300000, lanes: 0, perYear: 0, items: { level: { on: true, v: 4 }, tickets: { on: true, v: 50 }, user: { on: true, v: 70 }, mttr: { on: true, v: 4 }, auto: { on: false, v: 50 }, cost: { on: false, v: 50 }, ot: { on: true, v: 70 } } };
+    state.simResult = null; state.goals = { touched: false, horizon: 36, budgetMode: 'needed', budget: 300000, lanes: 0, perYear: 0, cap: { fte: 0, share: 0.2, partners: 0 }, items: { level: { on: true, v: 4 }, tickets: { on: true, v: 50 }, user: { on: true, v: 70 }, mttr: { on: true, v: 4 }, auto: { on: false, v: 50 }, cost: { on: false, v: 50 }, ot: { on: true, v: 70 } } };
     const pg = $('#paramsGrid'); if (pg) { pg.innerHTML = ''; $('#freqGrid').innerHTML = ''; }
     $('#feed').innerHTML = ''; window.Scene3D.reset();
     endHandled = true;
@@ -1242,13 +1242,13 @@
   }
   function renderPath(road, L) {
     if (!road.steps.length) { $('#pathSummary').textContent = 'Kein Zeitplan ohne Roadmap.'; $('#pathChart').innerHTML = ''; return; }
-    const lanes = state.intake.applied && state.intake.lanes ? state.intake.lanes : 2;
+    const lanes = simLanes();
     const sch = window.Intake.schedule(road.steps, lanes, L);
     const last = road.steps[road.steps.length - 1];
     const years = sch.totalMonths / 12;
     const perYear = last.cumInvest / Math.max(1, years);
     const end = new Date(); end.setMonth(end.getMonth() + Math.round(sch.totalMonths));
-    $('#pathSummary').innerHTML = '<b>Dauer etwa ' + Math.round(sch.totalMonths) + ' Monate</b> (bis ' + end.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }) + ') in ' + (lanes === 1 ? 'einer Maßnahme nach der anderen' : lanes + ' Maßnahmen gleichzeitig') + (state.intake.applied && state.intake.lanes ? ', abgeleitet aus der Teamgröße' : '') + '. Investition ' + fmtEur(last.cumInvest) + ', das sind etwa ' + fmtEur(perYear) + ' je Jahr. Nach Abschluss sinken die jährlichen Kosten um ' + fmtEur(last.cumNet) + ' netto. ' + (state.intake.applied && state.intake.customer ? 'Berechnet für ' + esc(state.intake.customer) + ' mit ' + state.params.employees + ' Mitarbeitern.' : '');
+    $('#pathSummary').innerHTML = '<b>Dauer etwa ' + Math.round(sch.totalMonths) + ' Monate</b> (bis ' + end.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }) + ') in ' + (lanes === 1 ? 'einer Maßnahme nach der anderen' : lanes + ' Maßnahmen gleichzeitig') + ', abgeleitet aus dem Umsetzungstempo in Schritt 1' + '. Investition ' + fmtEur(last.cumInvest) + ', das sind etwa ' + fmtEur(perYear) + ' je Jahr. Nach Abschluss sinken die jährlichen Kosten um ' + fmtEur(last.cumNet) + ' netto. ' + (state.intake.applied && state.intake.customer ? 'Berechnet für ' + esc(state.intake.customer) + ' mit ' + state.params.employees + ' Mitarbeitern.' : '');
     $('#pathChart').innerHTML = pathChart(sch);
   }
 
@@ -1264,6 +1264,20 @@
     { id: 'ot', name: 'Produktionsstillstand senken um', unit: '%', min: 10, max: 99, step: 5, note: 'Stillstandzeit je Jahr gegenüber heute.', ot: true }
   ];
   const saveGoals = () => store.set('zt.goals', state.goals);
+  const FTE_PER_MEASURE = 2.5;
+  /* Umsetzungstempo: gleichzeitige Maßnahmen aus IT-Teamgröße, Zeitanteil für Veränderung und Partnerteams. */
+  function capacity() {
+    const G = state.goals; if (!G.cap) G.cap = { fte: 0, share: 0.2, partners: 0 };
+    const team = state.intake.extra && state.intake.extra.team && state.intake.extra.team.metrics ? state.intake.extra.team.metrics.itFte : null;
+    const emp = state.intake.employees || state.params.employees || 300;
+    const fte = G.cap.fte > 0 ? G.cap.fte : (team ? team : Math.max(2, Math.round(emp * 0.03)));
+    const source = G.cap.fte > 0 ? 'eigene Angabe' : (team ? 'aus der Ist-Aufnahme (Organigramm)' : 'Faustregel 3 % der ' + fmtNum(emp) + ' Mitarbeiter');
+    const internal = fte * G.cap.share / FTE_PER_MEASURE;
+    const derived = Math.max(1, Math.min(4, Math.round(internal + G.cap.partners)));
+    const lanes = G.lanes > 0 ? G.lanes : derived;
+    return { fte, source, internal, derived, lanes, manual: G.lanes > 0 };
+  }
+  function simLanes() { return capacity().lanes; }
   function simStartLevels() { return state.intake.applied ? Object.assign({}, state.base) : (intakeHasData() ? twinLevels() : Object.assign({}, state.base)); }
   function metricsOf(levels) {
     const P = state.params, A = window.Analysis;
@@ -1292,9 +1306,13 @@
     $('#budgetAmountRow').hidden = G.budgetMode !== 'available';
     $('#goalBudget').value = G.budget;
     $('#budgetModeHint').textContent = G.budgetMode === 'available' ? 'Die Simulation sucht den besten Pfad innerhalb dieses Budgets und zeigt, wie weit er trägt.' : 'Die Simulation ermittelt das nötige Budget und erstellt in Schritt 5 die Argumentation für den Antrag.';
-    const teamLanes = state.intake.applied && state.intake.lanes ? state.intake.lanes : null;
-    $('#lanesSeg').innerHTML = '<button type="button" data-lanes="0" aria-pressed="' + (!G.lanes) + '"><span class="lbl">Aus Teamgröße</span></button>' + [1, 2, 3, 4].map(n => '<button type="button" data-lanes="' + n + '" aria-pressed="' + (G.lanes === n) + '"><span class="n">' + n + '</span><span class="lbl">' + (n === 1 ? 'nacheinander' : 'gleichzeitig') + '</span></button>').join('');
-    $('#lanesHint').textContent = G.lanes ? (G.lanes === 1 ? 'Eine Maßnahme nach der anderen: längste Dauer, geringste Belastung des Teams.' : G.lanes + ' Maßnahmen laufen parallel. Das verkürzt die Dauer, braucht aber Kapazität im Team oder einen Partner.') : (teamLanes ? 'Aus der Teamgröße in der Ist-Aufnahme: ' + teamLanes + (teamLanes === 1 ? ' Maßnahme' : ' Maßnahmen gleichzeitig') + ' (etwa eine je acht IT-Mitarbeiter).' : 'Ohne Teamdaten rechnet die Simulation mit zwei Maßnahmen gleichzeitig; die Ist-Aufnahme kann das aus der Teamgröße ableiten.');
+    const C = capacity();
+    $('#capFte').value = C.fte; $('#capFteHint').textContent = 'Vorbelegung: ' + C.source + '. Überschreiben, wenn die Zahl bekannt ist.';
+    $('#capShareSeg').innerHTML = [[.1, 'kaum', '10 %'], [.2, 'ein Tag je Woche', '20 %'], [.33, 'ein Drittel', '33 %'], [.5, 'die Hälfte', '50 %']].map(o => '<button type="button" data-capshare="' + o[0] + '" aria-pressed="' + (Math.abs(G.cap.share - o[0]) < .01) + '"><span class="n">' + o[2] + '</span><span class="lbl">' + o[1] + '</span></button>').join('');
+    $('#capPartnerSeg').innerHTML = [0, 1, 2].map(n => '<button type="button" data-cappartners="' + n + '" aria-pressed="' + (G.cap.partners === n) + '"><span class="n">' + n + '</span><span class="lbl">' + (n === 0 ? 'keine' : n === 1 ? 'Team' : 'Teams') + '</span></button>').join('');
+    $('#capResult').innerHTML = '<b>' + C.lanes + (C.lanes === 1 ? ' Maßnahme nach der anderen' : ' Maßnahmen gleichzeitig') + (C.manual ? ' (selbst festgelegt)' : '') + '</b>' + fmtNum(C.fte) + ' IT-Mitarbeiter × ' + Math.round(G.cap.share * 100) + ' % Zeit = ' + fmtNum(C.fte * G.cap.share, 1) + ' Vollzeitkräfte für Veränderung, das trägt ' + fmtNum(C.internal, 1) + (C.internal < 1.5 ? ' Maßnahme' : ' Maßnahmen') + (G.cap.partners ? ', plus ' + G.cap.partners + (G.cap.partners === 1 ? ' Partnerteam' : ' Partnerteams') : '') + (C.manual ? '. Berechnet wären ' + C.derived + '.' : (C.internal + G.cap.partners > 4.5 ? '. Mehr als vier gleichzeitig plant die Simulation nicht; Voraussetzungen und Wartungsfenster begrenzen ohnehin.' : '.')) + (C.internal < 1 && !G.cap.partners ? ' Unter einer Maßnahme: Das Team braucht Entlastung im Tagesgeschäft oder einen Partner, sonst zieht sich jede Maßnahme in die Länge.' : '');
+    $('#lanesManualOn').checked = G.lanes > 0; $('#lanesManualRow').hidden = !(G.lanes > 0);
+    $('#lanesSeg').innerHTML = [1, 2, 3, 4].map(n => '<button type="button" data-lanes="' + n + '" aria-pressed="' + (G.lanes === n) + '"><span class="n">' + n + '</span><span class="lbl">' + (n === 1 ? 'nacheinander' : 'gleichzeitig') + '</span></button>').join('');
     $('#perYearOn').checked = G.perYear > 0; $('#perYearRow').hidden = !(G.perYear > 0); $('#goalPerYear').value = G.perYear || 0;
     $('#perYearHint').textContent = G.perYear > 0 ? 'Schritte, die den Betrag eines Jahres überschreiten würden, warten auf das nächste Haushaltsjahr.' : 'Ohne Grenze darf der Pfad das Budget so schnell ausgeben, wie das Umsetzungstempo erlaubt.';
     const hasTwin = !!state.intake.applied;
@@ -1338,7 +1356,7 @@
     const base = metricsOf(start);
     const goals = activeGoals().map(g => Object.assign({ g }, goalTarget(g, base)));
     const budgetPoints = G.budgetMode === 'available' ? Math.floor(G.budget / P.eurPerPoint) : 80;
-    const lanes = G.lanes > 0 ? G.lanes : (state.intake.applied && state.intake.lanes ? state.intake.lanes : 2);
+    const lanes = simLanes();
     const memo = {}; const mOf = l => { const key = FIELDS.map(f => l[f.id]).join(''); return memo[key] || (memo[key] = metricsOf(l)); };
     const gap0 = goals.map(gl => Math.max(1e-9, gl.gap(base, start)));
     const goalGap = goals.length ? (l => { const m = mOf(l); return goals.reduce((s, gl, i) => s + Math.min(1, gl.gap(m, l) / gap0[i]), 0); }) : null;
@@ -1459,7 +1477,7 @@
     const qw = steps.find(s => s.payback <= 12 && s.stepSaving > 0); if (qw) args.push({ t: 'Schnell sichtbar', s: 'Schritt ' + (steps.indexOf(qw) + 1) + ' (' + qw.field.name + ' auf Stufe ' + qw.stage + ') zahlt sich innerhalb eines Jahres aus und finanziert die weiteren Schritte mit.' });
     if (prevGain > 0) args.push({ t: 'Risiko und Resilienz', s: 'Jährlich ' + fmtNum(Math.round(prevGain)) + ' Vorfälle mehr werden verhindert oder ohne menschlichen Eingriff gelöst, darunter Sicherheitsvorfälle und Ausfälle, die heute Stunden kosten.' });
     const okGoals = R.goals.filter(c => c.metAt >= 0 || c.okNow || (R.useFull && c.metAtFull >= 0)); if (okGoals.length) args.push({ t: 'Strategische Ziele', s: okGoals.map(c => c.g.name.replace(' um', '').replace(' mindestens', '').replace(' höchstens', '') + ' (' + c.fmt(c.target) + ')').join(', ') + ' werden erreicht, in etwa ' + Math.round(R.months) + ' Monaten.' });
-    args.push({ t: 'Planbarkeit', s: 'Die Investition verteilt sich auf ' + years + ' Jahre mit höchstens ' + fmtEur(maxYear) + ' in einem Jahr, mit ' + (R.lanes === 1 ? 'einer Maßnahme nach der anderen' : R.lanes + ' Maßnahmen gleichzeitig') + (state.intake.applied && state.intake.lanes ? ' passend zur Teamgröße' : '') + '. Jeder Schritt hat ein Erfolgskriterium und lässt sich einzeln beauftragen.' });
+    args.push({ t: 'Planbarkeit', s: 'Die Investition verteilt sich auf ' + years + ' Jahre mit höchstens ' + fmtEur(maxYear) + ' in einem Jahr, mit ' + (R.lanes === 1 ? 'einer Maßnahme nach der anderen' : R.lanes + ' Maßnahmen gleichzeitig') + ' (' + fmtNum(capacity().fte) + ' IT-Mitarbeiter, ' + Math.round(state.goals.cap.share * 100) + ' % Zeit für Veränderung' + (state.goals.cap.partners ? ', ' + state.goals.cap.partners + ' Partnerteam' + (state.goals.cap.partners > 1 ? 's' : '') : '') + '). Jeder Schritt hat ein Erfolgskriterium und lässt sich einzeln beauftragen.' });
     if (R.reservation) args.push({ t: 'Vorbehalt', s: R.reservation });
     if (G.budgetMode !== 'available') args.push({ t: 'Budgetantrag', s: 'Beantragt werden ' + fmtEur(investTotal) + ' einmalig und ' + fmtEur(steps.reduce((s, st) => s + st.opex, 0)) + ' je Jahr laufend. Gegenwert: ' + fmtEur(savingsFull) + ' je Jahr ab Abschluss, kumuliert ' + fmtEur(cf.rows[cf.rows.length - 1].cum) + ' nach ' + cf.H + ' Monaten.' });
     $('#argH').textContent = G.budgetMode === 'available' ? 'Warum es sich lohnt' : 'Warum es sich lohnt: Argumentation für den Budgetantrag';
@@ -1507,6 +1525,8 @@
       }
       const gt = t.closest('[data-gate]'); if (gt) { if (gt.dataset.gate === 'calib') { showScreen('istbild'); } else { const Q = state.twinQuality || twinQuality(); state.twinAck = Q.stamp; store.set('zt.twinAck', Q.stamp); state.simResult = null; if (state.screen === 'roadmap') renderRoadmapCase(); else renderSimulate(); toast('Fortgesetzt trotz nicht belastbarem Zwilling. Der Vorbehalt steht im Urteil und in der Zusammenfassung.'); } return; }
       const ln = t.closest('[data-lanes]'); if (ln) { state.goals.lanes = parseInt(ln.dataset.lanes, 10); saveGoals(); state.simResult = null; renderGoals(); return; }
+      const cs = t.closest('[data-capshare]'); if (cs) { state.goals.cap.share = parseFloat(cs.dataset.capshare); saveGoals(); state.simResult = null; renderGoals(); return; }
+      const cp = t.closest('[data-cappartners]'); if (cp) { state.goals.cap.partners = parseInt(cp.dataset.cappartners, 10); saveGoals(); state.simResult = null; renderGoals(); return; }
       const hz = t.closest('[data-horizon]'); if (hz) { state.goals.horizon = parseInt(hz.dataset.horizon, 10); state.goals.touched = true; saveGoals(); state.simResult = null; renderGoals(); return; }
       const bm = t.closest('[data-bmode]'); if (bm) { state.goals.budgetMode = bm.dataset.bmode; state.goals.touched = true; saveGoals(); state.simResult = null; renderGoals(); return; }
       const bs = t.closest('[data-base]'); if (bs && !bs.disabled) { state.useAssessment = bs.dataset.base === 'assess'; store.set('zt.useAssessment', state.useAssessment); applyBase(); renderPlan(); return; }
@@ -1543,6 +1563,8 @@
       if (e.target.id === 'goalBudget') { state.goals.budget = Math.max(0, parseFloat(e.target.value) || 0); state.goals.touched = true; saveGoals(); state.simResult = null; renderGoalsSummary(); }
       if (e.target.id === 'goalPerYear') { state.goals.perYear = Math.max(0, parseFloat(e.target.value) || 0); saveGoals(); state.simResult = null; }
     });
+    $('#lanesManualOn').addEventListener('change', e => { state.goals.lanes = e.target.checked ? capacity().derived : 0; saveGoals(); state.simResult = null; renderGoals(); });
+    $('#capFte').addEventListener('change', e => { state.goals.cap.fte = Math.max(0, parseInt(e.target.value, 10) || 0); saveGoals(); state.simResult = null; renderGoals(); });
     $('#perYearOn').addEventListener('change', e => { state.goals.perYear = e.target.checked ? (state.goals.perYear > 0 ? state.goals.perYear : Math.max(50000, Math.round((state.goals.budgetMode === 'available' ? state.goals.budget : 300000) / 3 / 10000) * 10000)) : 0; saveGoals(); state.simResult = null; renderGoals(); });
     document.addEventListener('change', e => { const go = e.target.dataset && e.target.dataset.goalOn; if (go) { state.goals.items[go].on = e.target.checked; state.goals.touched = true; saveGoals(); state.simResult = null; renderGoals(); } });
     bindIntake();

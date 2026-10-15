@@ -108,9 +108,16 @@
           </div>
           <div class="budget-box">
             <div class="eyebrow" style="margin-bottom:6px">Umsetzungstempo</div>
-            <p class="note" style="margin:0 0 6px">Wie viele Maßnahmen kann die IT gleichzeitig umsetzen? Jede Maßnahme bindet ein Umsetzungsteam über Monate.</p>
-            <div class="segments wrap" id="lanesSeg" role="group" aria-label="Gleichzeitige Maßnahmen"></div>
-            <p class="note" id="lanesHint"></p>
+            <p class="note" style="margin:0 0 6px">Die Simulation leitet aus drei Angaben ab, wie viele Maßnahmen gleichzeitig laufen können. Eine Maßnahme bindet etwa zweieinhalb Vollzeitkräfte über drei bis acht Monate.</p>
+            <div class="params-grid one"><label>IT-Mitarbeiter (Vollzeitstellen)<input type="number" id="capFte" min="1" max="2000" step="1"></label></div>
+            <p class="note" id="capFteHint"></p>
+            <div class="eyebrow" style="margin:8px 0 4px">Zeit für Veränderung neben dem Tagesgeschäft</div>
+            <div class="segments wrap" id="capShareSeg" role="group" aria-label="Zeit für Veränderung"></div>
+            <div class="eyebrow" style="margin:8px 0 4px">Externe Umsetzungsteams (Partner)</div>
+            <div class="segments wrap" id="capPartnerSeg" role="group" aria-label="Externe Teams"></div>
+            <div class="cap-result" id="capResult"></div>
+            <label class="switch" style="margin-top:8px"><input type="checkbox" id="lanesManualOn"><span>Anzahl selbst festlegen</span></label>
+            <div id="lanesManualRow" style="margin-top:6px"><div class="segments wrap" id="lanesSeg" role="group" aria-label="Gleichzeitige Maßnahmen"></div></div>
             <label class="switch" style="margin-top:8px"><input type="checkbox" id="perYearOn"><span>Investition je Jahr begrenzen</span></label>
             <div class="params-grid one" id="perYearRow" style="margin-top:6px"><label>Höchstens je Jahr (€)<input type="number" id="goalPerYear" min="0" step="10000" value="0"></label></div>
             <p class="note" id="perYearHint"></p>
