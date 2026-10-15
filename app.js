@@ -21,11 +21,12 @@
     clearAll() { try { Object.keys(localStorage).filter(k => k.indexOf('zt.') === 0).forEach(k => localStorage.removeItem(k)); } catch (e) { /* kein Speicher */ } }
   };
   (function () { if (store.get('zt.version', 0) !== STORAGE_VERSION) { const theme = store.get('zt.theme', ''); store.clearAll(); if (theme) store.set('zt.theme', theme); store.set('zt.version', STORAGE_VERSION); } })();
-  const DEFAULT_FREQ = {}; EVENTS.forEach(e => { DEFAULT_FREQ[e.id] = e.freq; });
+  setOtEnabled(store.get('zt.ot', false));
+  const DEFAULT_FREQ = {}; EVENTS_ALL.forEach(e => { DEFAULT_FREQ[e.id] = e.freq; });
 
   const allOne = () => { const o = {}; FIELDS.forEach(f => { o[f.id] = 1; }); return o; };
   const state = {
-    view: 'sim', screen: 'start', returnScreen: 'start', evaluated: false,
+    view: 'sim', screen: 'start', returnScreen: 'start', evaluated: false, ot: store.get('zt.ot', false),
     budgetIdx: store.get('zt.budget', 1),
     useAssessment: store.get('zt.useAssessment', false),
     base: allOne(), levels: allOne(),
@@ -39,7 +40,7 @@
     vary: store.get('zt.vary', false),
     runCount: 0
   };
-  (function () { const fo = store.get('zt.freq', {}); EVENTS.forEach(e => { if (typeof fo[e.id] === 'number') e.freq = fo[e.id]; }); })();
+  (function () { const fo = store.get('zt.freq', {}); EVENTS_ALL.forEach(e => { if (typeof fo[e.id] === 'number') e.freq = fo[e.id]; }); })();
   if (!state.assessment) { state.assessment = {}; FIELDS.forEach(f => { state.assessment[f.id] = 2; }); }
   const savedLevels = store.get('zt.levels', null);
 
@@ -98,10 +99,10 @@
 
   /* ---------- Totale ---------- */
   function totalsFor(levels) {
-    const t = { it: 0, user: 0, touches: 0, tickets: 0, prevented: 0, auto: 0, events: [] };
+    const t = { it: 0, user: 0, ot: 0, touches: 0, tickets: 0, prevented: 0, auto: 0, events: [] };
     EVENTS.forEach(e => {
       const eff = effectiveLevel(e, levels); const v = e.v[eff.level - 1];
-      t.it += v.it; t.user += v.user; t.touches += v.touches;
+      t.it += v.it; t.user += v.user; t.ot += v.ot || 0; t.touches += v.touches;
       if (v.ticket) t.tickets++;
       if (v.prevented) t.prevented++; else if (v.touches === 0) t.auto++;
       t.events.push({ def: e, level: eff.level, limiters: eff.limiters, v });
@@ -109,8 +110,9 @@
     t.index = experienceIndex(t.user, t.tickets, t.touches);
     return t;
   }
-  const BASE1 = (() => { const l = allOne(); const t = { it: 0, user: 0, touches: 0, tickets: 0 }; EVENTS.forEach(e => { const v = e.v[0]; t.it += v.it; t.user += v.user; t.touches += v.touches; if (v.ticket) t.tickets++; }); return t; })();
+  function base1() { const t = { it: 0, user: 0, touches: 0, tickets: 0 }; EVENTS.forEach(e => { const v = e.v[0]; t.it += v.it; t.user += v.user; t.touches += v.touches; if (v.ticket) t.tickets++; }); return t; }
   function experienceIndex(user, tickets, touches) {
+    const BASE1 = base1();
     const v = 100 - 50 * Math.min(1, user / BASE1.user) - 25 * Math.min(1, tickets / BASE1.tickets) - 15 * Math.min(1, touches / BASE1.touches);
     return Math.max(0, Math.round(v));
   }
@@ -332,7 +334,7 @@
       '<div><h3>' + esc(inst.v.title) + '</h3><div class="sub">' + esc(inst.def.title) + '</div></div>' +
       '<span class="status open">Stufe ' + inst.level + '</span></div>' +
       '<ol class="steps"></ol>' +
-      '<div class="card-foot"><span class="m">IT <b>' + fmtHours(inst.v.it) + '</b></span><span class="m">Ausfall <b>' + fmtHours(inst.v.user) + '</b></span><span class="m">Eingriffe <b>' + inst.v.touches + '</b></span>' +
+      '<div class="card-foot"><span class="m">IT <b>' + fmtHours(inst.v.it) + '</b></span><span class="m">Ausfall <b>' + fmtHours(inst.v.user) + '</b></span>' + (inst.v.ot ? '<span class="m">Stillstand <b>' + fmtHours(inst.v.ot) + '</b></span>' : '') + '<span class="m">Eingriffe <b>' + inst.v.touches + '</b></span>' +
       (inst.v.risk ? '<span class="risk">' + esc(inst.v.risk) + '</span>' : '') + '</div>';
     inst.el = card; inst.stepsEl = $('.steps', card); inst.statusEl = $('.status', card);
     card.addEventListener('click', () => window.Scene3D.focusEvent(inst.def.id, 6));
@@ -380,13 +382,14 @@
   function renderKpis() {
     const started = state.day.filter(i => i.started);
     const open = started.filter(i => !i.finished).length;
-    const it = started.reduce((s, i) => s + i.v.it, 0), user = started.reduce((s, i) => s + i.v.user, 0), touches = started.reduce((s, i) => s + i.v.touches, 0);
+    const it = started.reduce((s, i) => s + i.v.it, 0), user = started.reduce((s, i) => s + i.v.user, 0), touches = started.reduce((s, i) => s + i.v.touches, 0), otMin = started.reduce((s, i) => s + (i.v.ot || 0), 0);
     const tickets = started.filter(i => i.v.ticket).length;
     const good = started.filter(i => i.finished && (i.v.prevented || i.v.touches === 0)).length;
     const tiles = [
       { l: 'Offen', v: open, cls: open > 2 ? 'hl' : '' }, { l: 'Tickets', v: tickets, cls: tickets > 3 ? 'hl' : '' }, { l: 'Verhindert / autonom', v: good, cls: good ? 'ok' : '' },
       { l: 'IT-Aufwand', v: fmtH(it), u: 'h', cls: it > 240 ? 'hl' : '' }, { l: 'Ausfallzeit', v: fmtH(user), u: 'h', cls: user > 240 ? 'hl' : '' }, { l: 'Eingriffe', v: touches, cls: touches > 10 ? 'hl' : '' }
     ];
+    if (state.ot) tiles.push({ l: 'Produktions-stillstand', v: fmtH(otMin), u: 'h', cls: otMin > 60 ? 'hl' : '' });
     $('#tiles').innerHTML = tiles.map(t => '<div class="tile ' + t.cls + '"><div class="lbl">' + t.l + '</div><div class="val">' + t.v + (t.u ? '<small>' + t.u + '</small>' : '') + '</div></div>').join('');
     const xi = experienceIndex(user, tickets, touches);
     $('#xla').textContent = xi; $('#xlaBar').style.width = xi + '%';
@@ -398,8 +401,8 @@
 
   /* ---------- Auswertung ---------- */
   function dayTotals(day) {
-    const t = { it: 0, user: 0, touches: 0, tickets: 0, prevented: 0, auto: 0, events: [] };
-    day.forEach(i => { t.it += i.v.it; t.user += i.v.user; t.touches += i.v.touches; if (i.v.ticket) t.tickets++; if (i.v.prevented) t.prevented++; else if (i.v.touches === 0) t.auto++; t.events.push({ def: i.def, level: i.level, limiters: i.limiters, v: i.v }); });
+    const t = { it: 0, user: 0, ot: 0, touches: 0, tickets: 0, prevented: 0, auto: 0, events: [] };
+    day.forEach(i => { t.it += i.v.it; t.user += i.v.user; t.ot += i.v.ot || 0; t.touches += i.v.touches; if (i.v.ticket) t.tickets++; if (i.v.prevented) t.prevented++; else if (i.v.touches === 0) t.auto++; t.events.push({ def: i.def, level: i.level, limiters: i.limiters, v: i.v }); });
     t.index = experienceIndex(t.user, t.tickets, t.touches);
     return t;
   }
@@ -425,6 +428,7 @@
       row('Experience-Index', x => x.index, v => v, false) +
       row('IT-Aufwand', x => x.it, fmtHours, true) +
       row('Ausfallzeit Mitarbeiter', x => x.user, fmtHours, true) +
+      (state.ot ? row('Produktionsstillstand', x => x.ot || 0, fmtHours, true) : '') +
       row('Tickets', x => x.tickets, v => v, true) +
       row('Manuelle Eingriffe', x => x.touches, v => v, true) +
       row('Verhindert oder autonom', x => x.prevented + x.auto, v => v, false) + '</tbody>';
@@ -450,7 +454,7 @@
   }
 
   /* ---------- Wissensseite: Reifegrade ---------- */
-  const TOTALS = [1, 2, 3, 4, 5].map(n => { const l = {}; FIELDS.forEach(f => { l[f.id] = n; }); const t = totalsFor(l); t.steps = { human: 0, auto: 0, agent: 0 }; EVENTS.forEach(e => e.v[n - 1].steps.forEach(s => { if (s.a === 'sd' || s.a === 'tech' || s.a === 'mgr') t.steps.human++; else if (s.a === 'sys') t.steps.auto++; else if (s.a === 'ai') t.steps.agent++; })); return t; });
+  const totalsByLevel = () => [1, 2, 3, 4, 5].map(n => { const l = {}; FIELDS.forEach(f => { l[f.id] = n; }); const t = totalsFor(l); t.steps = { human: 0, auto: 0, agent: 0 }; EVENTS.forEach(e => e.v[n - 1].steps.forEach(s => { if (s.a === 'sd' || s.a === 'tech' || s.a === 'mgr') t.steps.human++; else if (s.a === 'sys') t.steps.auto++; else if (s.a === 'ai') t.steps.agent++; })); return t; });
 
   function niceStep(max) { const raw = max / 4; const p = Math.pow(10, Math.floor(Math.log10(raw || 1))); const c = raw / p; return (c <= 1 ? 1 : c <= 2 ? 2 : c <= 5 ? 5 : 10) * p; }
   function barChart(values, opts) {
@@ -472,6 +476,7 @@
     return s;
   }
   function renderLevelsView() {
+    const TOTALS = totalsByLevel();
     const lv = state.levelView;
     $('#ladder').innerHTML = LEVELS.map(l => '<button type="button" data-levelview="' + l.n + '" aria-pressed="' + (l.n === lv) + '" class="' + (l.n < lv ? 'reached' : '') + '"><span class="n">Stufe ' + l.n + '</span><span class="name">' + l.name + '</span><span class="tag">' + l.tagline + '</span></button>').join('');
     const l = LEVELS[lv - 1], q = PERSPECTIVES[lv];
@@ -569,7 +574,7 @@
   function frameIndex() { return state.frameIdx === null ? state.budgetIdx : state.frameIdx; }
 
   function renderParams() {
-    $('#paramsGrid').innerHTML = Object.keys(PARAM_LABELS).map(k => {
+    $('#paramsGrid').innerHTML = Object.keys(PARAM_LABELS).filter(k => k !== 'rateOT' || state.ot).map(k => {
       const v = PCT_PARAMS[k] ? Math.round(state.params[k] * 100) : state.params[k];
       return '<label>' + PARAM_LABELS[k][0] + (PARAM_LABELS[k][1] ? ' (' + PARAM_LABELS[k][1] + ')' : '') + '<input type="number" id="p_' + k + '" data-param="' + k + '" value="' + v + '" step="' + (k === 'runs' || k === 'employees' || k === 'workdays' ? 1 : 'any') + '" min="0"></label>';
     }).join('');
@@ -624,6 +629,7 @@
       tile('IT-Aufwand je Jahr', fmtNum(Math.round(base.exp.it / 60)) + ' h', fmtNum(Math.round(base.it.p10 / 60)) + ' – ' + fmtNum(Math.round(base.it.p90 / 60)) + ' h') +
       tile('Ausfallzeit je Jahr', fmtNum(Math.round(base.exp.user / 60)) + ' h', fmtNum(Math.round(base.user.p10 / 60)) + ' – ' + fmtNum(Math.round(base.user.p90 / 60)) + ' h') +
       tile('Tickets je Jahr', fmtNum(Math.round(base.exp.tickets)), fmtNum(Math.round(base.tickets.p10)) + ' – ' + fmtNum(Math.round(base.tickets.p90))) +
+      (state.ot ? tile('Produktionsstillstand je Jahr', fmtNum(Math.round(base.exp.ot / 60)) + ' h', fmtNum(Math.round(base.ot.p10 / 60)) + ' – ' + fmtNum(Math.round(base.ot.p90 / 60)) + ' h') : '') +
       tile('Kosten je Jahr', fmtEur(base.exp.cost), fmtEur(base.cost.p10) + ' – ' + fmtEur(base.cost.p90)) +
       tile('Verhindert oder autonom', fmtNum(Math.round(base.exp.prevented)) + ' <small>von ' + fmtNum(Math.round(base.exp.occurrences)) + '</small>');
 
@@ -694,6 +700,7 @@
     state.playing = false; state.ended = false; state.day = null; state.runs = []; state.evaluated = false; state.runCount = 0;
     state.follow = true; $('#followBtn').checked = true; window.Scene3D.setFollow(true);
     state.vary = false; $('#varyBtn').checked = false;
+    setOt(false, true);
     state.assessment = {}; FIELDS.forEach(f => { state.assessment[f.id] = 2; }); state.assessed = false; state.target = 5;
     state.params = Object.assign({}, PARAMS); state.frameIdx = null; state.levelView = 3;
     EVENTS.forEach(e => { e.freq = DEFAULT_FREQ[e.id]; });
@@ -704,6 +711,22 @@
     renderPlan(); renderMatrix();
     showView('sim'); showScreen('start');
     toast('Alles zurückgesetzt. Die Simulation beginnt von vorn.');
+  }
+
+  function setOt(on, quiet) {
+    on = !!on; state.ot = on; store.set('zt.ot', on);
+    setOtEnabled(on);
+    ['levels', 'base'].forEach(k => { if (state[k].ot === undefined) state[k].ot = 1; });
+    if (state.assessment.ot === undefined) state.assessment.ot = 2;
+    $$('.otToggle').forEach(c => { c.checked = on; });
+    window.Scene3D.setOt(on);
+    if (state.screen === 'plan') renderPlan();
+    if (state.screen === 'intake') renderIntake();
+    if (state.screen === 'analysis') renderAnalysis();
+    if (state.view === 'levels') renderLevelsView();
+    if (state.view === 'path') renderMatrix();
+    if (state.screen === 'run' && state.day) renderFieldSummary();
+    if (!quiet) toast(on ? 'OT-Erweiterung aktiv: Handlungsfeld OT & Produktion, fünf Produktionsereignisse, Werkhalle und OT-Quellen.' : 'OT-Erweiterung abgeschaltet.');
   }
 
   function adoptLevels(levels) {
@@ -735,7 +758,7 @@
   function rederiveExtras() { const it = state.intake; Object.keys(rawExtra).forEach(id => { const r = window.Sources.derive(id, rawExtra[id], extraCtx()); if (r) it.extra[id] = r; }); }
   function renderSources() {
     const it = state.intake;
-    $('#sourceGroups').innerHTML = window.Sources.GROUPS.map(g => {
+    $('#sourceGroups').innerHTML = window.Sources.GROUPS.filter(g => !g.ot || state.ot).map(g => {
       const list = window.Sources.SOURCES.filter(s => s.group === g.id);
       return '<div class="src-group"><div class="tg">' + g.name + '</div><div class="src-cards">' + list.map(s => {
         const r = it.extra && it.extra[s.id];
@@ -832,7 +855,8 @@
   function renderQuestions() {
     const it = state.intake;
     const lbl = { yes: 'Ja', partly: 'Teilweise', no: 'Nein' };
-    $('#questionList').innerHTML = QUESTIONS.map(q => { const ag = it.agentAnswers && it.agentAnswers[q.id]; return '<div class="q"><div class="qf">' + fieldName(q.field) + ' · Stufe ' + q.stage + '</div><div>' + esc(q.text) + '</div><div class="segments">' +
+    const activeQ = QUESTIONS.filter(q => FIELDS.some(f => f.id === q.field));
+    $('#questionList').innerHTML = activeQ.map(q => { const ag = it.agentAnswers && it.agentAnswers[q.id]; return '<div class="q"><div class="qf">' + fieldName(q.field) + ' · Stufe ' + q.stage + '</div><div>' + esc(q.text) + '</div><div class="segments">' +
       [['yes', 'Ja', ''], ['partly', 'Teilweise', 'partly'], ['no', 'Nein', 'no']].map(o => '<button type="button" class="' + o[2] + '" data-q="' + q.id + '" data-a="' + o[0] + '" aria-pressed="' + (it.answers[q.id] === o[0]) + '">' + o[1] + '</button>').join('') + '</div>' +
       (ag ? '<div class="agent-note"><b>Laut Agent: ' + lbl[ag.a] + '.</b>' + (ag.evidence ? ' ' + esc(ag.evidence) : '') + (it.answers[q.id] ? ' · von Ihnen überschrieben' : '') + '</div>' : '') + '</div>'; }).join('');
   }
@@ -934,16 +958,18 @@
     saveIntake(); renderSnResult(); renderSources(); renderReady();
   }
   function loadDemo() {
+    if (!state.ot) setOt(true, true);
     const d = window.Connectors.demoData(42);
+    d.docs += ' Produktion: Siemens S7-Steuerungen und HMIs in einem flachen Produktionsnetz, Fernwartung über den Herstellerzugang, kein OT-Monitoring, Stillstände werden im MES erfasst.';
     rawData = { incidents: d.incidents, requests: d.requests, changes: d.changes, cis: d.cis };
     state.intake.customer = d.customer; state.intake.employees = d.employees; state.intake.docText = d.docs;
     state.intake.detected = window.Intake.detectTools(d.docs); state.intake.manual = {}; state.intake.overrides = {};
     state.intake.answers = { q_inventory: 'yes', q_zerotouch: 'no', q_roles: 'partly', q_hr: 'no', q_monitoring: 'yes', q_e2e: 'no', q_scripts: 'yes', q_workflow: 'no', q_itsm: 'yes', q_portal: 'partly', q_patch: 'yes', q_edr: 'partly', q_roles_org: 'yes', q_autoeng: 'no' };
     $('#docText').value = d.docs;
-    rawExtra = window.Sources.demoAll(7); state.intake.extra = {};
-    state.intake.agentAnswers = { q_dex: { a: 'no', evidence: 'Kein DEX-Werkzeug im Softwareinventar, Gerätestörungen werden erst nach Meldung sichtbar.' }, q_scripts: { a: 'yes', evidence: 'GitLab-Gruppe it-ops mit 3 Repositories und 126 Skripten, WSUS-Patchfenster jeden zweiten Dienstag.' }, q_remediation: { a: 'no', evidence: 'PRTG-Alarme gehen per E-Mail an die Gruppe it-ops; kein Runbook wird automatisch ausgelöst.' }, q_proactive: { a: 'no', evidence: 'Statusmeldungen erfolgen reaktiv über das Intranet nach Rückfragen.' }, q_vuln: { a: 'partly', evidence: 'Defender Vulnerability Management aktiv, Priorisierung nach CVSS, Schließung manuell im Patchfenster.' }, q_product: { a: 'no', evidence: 'Organisation nach Technikbereichen: Service Desk, Infrastruktur, Anwendungen.' }, q_ca: { a: 'partly', evidence: 'Eine Conditional-Access-Richtlinie für Admin-Konten, keine für Mitarbeiter.' } };
+    rawExtra = window.Sources.demoAll(7, state.ot); state.intake.extra = {};
+    state.intake.agentAnswers = { q_dex: { a: 'no', evidence: 'Kein DEX-Werkzeug im Softwareinventar, Gerätestörungen werden erst nach Meldung sichtbar.' }, q_scripts: { a: 'yes', evidence: 'GitLab-Gruppe it-ops mit 3 Repositories und 126 Skripten, WSUS-Patchfenster jeden zweiten Dienstag.' }, q_remediation: { a: 'no', evidence: 'PRTG-Alarme gehen per E-Mail an die Gruppe it-ops; kein Runbook wird automatisch ausgelöst.' }, q_proactive: { a: 'no', evidence: 'Statusmeldungen erfolgen reaktiv über das Intranet nach Rückfragen.' }, q_vuln: { a: 'partly', evidence: 'Defender Vulnerability Management aktiv, Priorisierung nach CVSS, Schließung manuell im Patchfenster.' }, q_product: { a: 'no', evidence: 'Organisation nach Technikbereichen: Service Desk, Infrastruktur, Anwendungen.' }, q_ca: { a: 'partly', evidence: 'Eine Conditional-Access-Richtlinie für Admin-Konten, keine für Mitarbeiter.' }, q_ot_inventory: { a: 'no', evidence: 'Steuerungen sind nur in der Instandhaltungsliste erfasst, Produktionsnetz ohne Zonen, Fernwartung direkt vom Hersteller.' } };
     recomputeMetrics(); rederiveExtras(); saveIntake(); renderIntake();
-    toast('Beispielkunde geladen: ' + d.customer + ' mit ' + Object.keys(rawExtra).length + ' weiteren Quellen');
+    toast('Beispielkunde geladen: ' + d.customer + ' mit ' + Object.keys(rawExtra).length + ' weiteren Quellen, OT-Erweiterung aktiv');
   }
   function detectFromText() {
     const text = $('#docText').value;
@@ -975,11 +1001,12 @@
   }
   function profileJSON() {
     const it = state.intake; const p = intakeProposal(); const levels = {}; FIELDS.forEach(f => { levels[f.id] = p[f.id].final; });
-    return JSON.stringify({ version: 1, customer: it.customer, employees: it.employees, exportedAt: new Date().toISOString(), levels, overrides: it.overrides, answers: it.answers, detected: it.detected, manual: it.manual, docText: it.docText, metrics: it.metrics, counts: it.counts, extra: it.extra, agentAnswers: it.agentAnswers }, null, 2);
+    return JSON.stringify({ version: 1, ot: state.ot, customer: it.customer, employees: it.employees, exportedAt: new Date().toISOString(), levels, overrides: it.overrides, answers: it.answers, detected: it.detected, manual: it.manual, docText: it.docText, metrics: it.metrics, counts: it.counts, extra: it.extra, agentAnswers: it.agentAnswers }, null, 2);
   }
   function importProfile(text) {
     try {
       const j = JSON.parse(text);
+      if (typeof j.ot === 'boolean' && j.ot !== state.ot) setOt(j.ot, true);
       state.intake = Object.assign({ customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false }, { customer: j.customer || '', employees: j.employees || 300, metrics: j.metrics || null, counts: j.counts || null, docText: j.docText || '', detected: j.detected || [], manual: j.manual || {}, answers: j.answers || {}, overrides: j.overrides || {}, extra: j.extra || {}, agentAnswers: j.agentAnswers || {} });
       rawData = null; rawExtra = {}; saveIntake(); renderIntake(); $('#docText').value = state.intake.docText; toast('Profil eingelesen' + (j.customer ? ': ' + j.customer : '') + '.');
     } catch (e) { toast('Die Datei ist kein gültiges Profil.'); }
@@ -1122,6 +1149,7 @@
       const tg = t.closest('[data-target]'); if (tg) { state.target = parseInt(tg.dataset.target, 10); store.set('zt.target', state.target); renderMatrix(); return; }
     });
     $('#startBtn').addEventListener('click', () => showScreen('intake'));
+    $$('.otToggle').forEach(c => c.addEventListener('change', e => setOt(e.target.checked)));
     $('#startPlanBtn').addEventListener('click', () => showScreen('plan'));
     bindIntake();
     $('#resetAllBtn').addEventListener('click', async () => { if (await ask('Planung, Durchläufe, Auswertung, Standortbestimmung und Annahmen werden gelöscht. Die Simulation beginnt von vorn. Fortfahren?')) resetAll(); });
@@ -1182,6 +1210,10 @@
     if (window.THREE) { try { window.Scene3D.init($('#c3d')); ok = true; } catch (e) { console.error(e); } }
     if (!ok) { $('#webglWarn').hidden = false; const noop = () => {}; window.Scene3D = new Proxy({}, { get: () => noop }); }
     bind();
+    ['levels', 'base'].forEach(k => { if (state.ot && state[k].ot === undefined) state[k].ot = 1; });
+    if (state.ot && state.assessment.ot === undefined) state.assessment.ot = 2;
+    $$('.otToggle').forEach(c => { c.checked = state.ot; });
+    window.Scene3D.setOt(state.ot);
     $('#playBtn').innerHTML = ICON.pause + 'Pause';
     $('#varyBtn').checked = !!state.vary;
     $('#stage').hidden = false;

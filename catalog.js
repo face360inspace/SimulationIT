@@ -53,7 +53,14 @@ const TOOL_CATALOG = [
   { id: 'itil', label: 'Dokumentierte Prozesse und Rollen (ITIL)', kw: ['itil', 'raci', 'prozesslandkarte', 'rollenmodell', 'betriebshandbuch'], field: 'org', stage: 2, note: 'Rollen und Prozesse' },
   { id: 'autoeng', label: 'Automation Engineering als Rolle', kw: ['automation engineer', 'automatisierungsteam', 'automate first', 'automation team', 'sre'], field: 'org', stage: 3, note: 'Automation Engineering' },
   { id: 'product', label: 'Produktteams / XLA-Steuerung', kw: ['produktteam', 'product team', 'plattformteam', 'platform team', 'xla'], field: 'org', stage: 4, note: 'Produktteams' },
-  { id: 'policyorg', label: 'Steuerung über Policies und Leitplanken', kw: ['policy board', 'governance board', 'leitplanken', 'steuerungsfunktion'], field: 'org', stage: 5, note: 'Steuerung über Policies' }
+  { id: 'policyorg', label: 'Steuerung über Policies und Leitplanken', kw: ['policy board', 'governance board', 'leitplanken', 'steuerungsfunktion'], field: 'org', stage: 5, note: 'Steuerung über Policies' },
+  /* OT & Produktion */
+  { id: 'ot_flat', label: 'Flaches Produktionsnetz, Herstellerzugänge ohne Kontrolle', kw: ['flaches produktionsnetz', 'flat network', 'teamviewer des herstellers', 'herstellerzugang', 'kein ot-monitoring', 'keine segmentierung'], field: 'ot', stage: 1, note: 'keine Transparenz' },
+  { id: 'ot_segment', label: 'OT-Segmentierung nach Zonen (Purdue, IEC 62443) und Jump-Host', kw: ['purdue', 'iec 62443', '62443', 'zonen und conduits', 'ot-segmentierung', 'jump-host', 'jump host', 'dmz produktion'], field: 'ot', stage: 2, note: 'Inventar und Segmentierung' },
+  { id: 'ot_monitor', label: 'OT-Monitoring und Asset-Erkennung (Claroty, Nozomi, Armis, Cyber Vision, Tenable OT)', kw: ['claroty', 'nozomi', 'armis', 'cyber vision', 'tenable.ot', 'tenable ot', 'ot-monitoring', 'ot monitoring', 'dragos', 'otorio'], field: 'ot', stage: 3, note: 'passives OT-Monitoring' },
+  { id: 'ot_remote', label: 'Gesteuerte Fernwartung mit Freigabe und Aufzeichnung (Secure Remote Access)', kw: ['secure remote access', 'gesteuerte fernwartung', 'fernwartung mit freigabe', 'session recording', 'privileged remote', 'claroty sra', 'xona'], field: 'ot', stage: 3, note: 'gesteuerte Fernwartung' },
+  { id: 'ot_predict', label: 'Vorausschauende Wartung und OT-Anomalieerkennung', kw: ['predictive maintenance', 'vorausschauende wartung', 'condition monitoring', 'ot-anomalie', 'anomalieerkennung produktion', 'mindsphere', 'insights hub'], field: 'ot', stage: 4, note: 'Anomalieerkennung und vorausschauende Wartung' },
+  { id: 'ot_twin', label: 'Digitaler Zwilling der Anlagen mit Safety-Leitplanken', kw: ['digitaler zwilling der anlage', 'digital twin', 'anlagenzwilling', 'safety-leitplanken', 'autonome produktion'], field: 'ot', stage: 5, note: 'resiliente Produktion' }
 ];
 
 /* Kurzinterview: Antworten ja / teilweise / nein. Jede Frage stützt eine Stufe
@@ -79,12 +86,20 @@ const QUESTIONS = [
   { id: 'q_vuln', field: 'security', stage: 4, text: 'Werden Schwachstellen risikobasiert priorisiert und automatisch geschlossen, Compliance-Nachweise automatisch erzeugt?' },
   { id: 'q_roles_org', field: 'org', stage: 2, text: 'Sind Rollen, Verantwortlichkeiten und Eskalationswege dokumentiert und werden sie regelmäßig überprüft?' },
   { id: 'q_autoeng', field: 'org', stage: 3, text: 'Gibt es eine Rolle Automation Engineering und fest eingeplante Zeit für Automatisierung?' },
-  { id: 'q_product', field: 'org', stage: 4, text: 'Arbeitet die IT in Produktteams und steuert über Kennzahlen zum Arbeitserlebnis (XLA)?' }
+  { id: 'q_product', field: 'org', stage: 4, text: 'Arbeitet die IT in Produktteams und steuert über Kennzahlen zum Arbeitserlebnis (XLA)?' },
+  { id: 'q_ot_inventory', field: 'ot', stage: 2, text: 'Sind Steuerungen, HMIs und Industrienetze inventarisiert und nach Zonen segmentiert, mit Fernwartung nur über einen Jump-Host?' },
+  { id: 'q_ot_monitoring', field: 'ot', stage: 3, text: 'Gibt es passives OT-Monitoring, gesteuerte Fernwartung mit Freigabe und Aufzeichnung sowie ein Firmware-Register?' },
+  { id: 'q_ot_predictive', field: 'ot', stage: 4, text: 'Werden Stillstände aus Maschinendaten vorhergesagt und Reaktionen innerhalb von Safety-Grenzen automatisch ausgelöst?' }
 ];
 
 /* Zuordnung von Tickets zu Ereignistypen: Kategorie- und Stichwortregeln,
    deutsch und englisch. Reihenfolge = Priorität. */
 const TICKET_RULES = [
+  { type: 'ot_remote', kw: ['fernwartung', 'remote access hersteller', 'herstellerzugang', 'vendor access', 'maschinenhersteller'] },
+  { type: 'ot_plc', kw: ['firmware', 'sps ', 'plc', 'steuerung', 'advisory'] },
+  { type: 'ot_malware', kw: ['usb', 'hmi infiziert', 'schadsoftware produktion', 'malware linie'] },
+  { type: 'ot_network', kw: ['fertigungszelle', 'produktionsnetz', 'ot-netz', 'switch halle', 'mes verbindung', 'profinet', 'opc ua'] },
+  { type: 'ot_stop', kw: ['stillstand', 'linie ', 'anlage', 'maschine', 'sensor', 'hmi', 'scada', 'mes', 'fertigung', 'produktion', 'instandhaltung', 'roboter'] },
   { type: 'mfa', kw: ['passwort', 'password', 'kennwort', 'mfa', 'authenticator', 'zweiter faktor', 'two-factor', '2fa', 'gesperrt', 'locked out', 'account lock', 'anmeldung nicht möglich', 'cannot login', 'login fehlgeschlagen'] },
   { type: 'login', kw: ['phishing', 'verdächtig', 'suspicious', 'security incident', 'sicherheitsvorfall', 'malware', 'virus', 'kompromittiert', 'compromised', 'impossible travel', 'unbekannte anmeldung'] },
   { type: 'onboarding', kw: ['onboarding', 'neuer mitarbeiter', 'new hire', 'new employee', 'eintritt', 'joiner', 'konto anlegen', 'create account', 'erstausstattung', 'arbeitsplatz einrichten'] },

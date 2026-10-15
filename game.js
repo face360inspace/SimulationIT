@@ -19,6 +19,7 @@ window.Scene3D = (function () {
   const bubbles = [];         // temporäre Sprites { sprite, life }
   const ticketCubes = [];
   let apMesh, gateway, serviceDeskPos, entrancePos, jonasFigure = null, claudiaDesk = null;
+  let hall = null; const machines = [];   // OT-Werkhalle (zuschaltbar)
   const eventTargets = {};    // eventId -> { pos: Vector3, desks: number[], floor: Vector3 }
   const waiting = [];         // Ereignisse, die auf einen Techniker warten
   let follow = true;
@@ -135,7 +136,7 @@ window.Scene3D = (function () {
       const tr = box(.3, h * .5, .3, COL.trunk); tr.position.set(x, h * .25, z); scene.add(tr);
       const cr = new THREE.Mesh(new THREE.ConeGeometry(h * .45, h * .9, 7), mat(COL.tree)); cr.position.set(x, h * .5 + h * .45, z); cr.castShadow = true; scene.add(cr);
     };
-    [[-22, -8, 4], [-23, 2, 3.4], [-21, 9, 4.4], [22, -7, 3.8], [23, 4, 4.2], [21, 12, 3.2], [-8, -16, 3.6], [6, -16, 4], [16, -15, 3.2], [-19, -15, 4.2], [12, 15.5, 3.4], [16, 16, 2.8]].forEach(t => treeAt(t[0], t[1], t[2]));
+    [[-22, -8, 4], [-23, 2, 3.4], [-21, 9, 4.4], [22, -7, 3.8], [23, 4, 4.2], [21, 12, 3.2], [-24, -18, 3.6], [24, -18, 4], [12, 15.5, 3.4], [16, 16, 2.8]].forEach(t => treeAt(t[0], t[1], t[2]));
     // Grundplatte des Gebäudes
     const plinth = box(35.5, .3, 23.5, 0xc8ced6); plinth.position.set(0, -.16, 0); scene.add(plinth);
     slab(0, 0, 34, 22, COL.floor);
@@ -209,9 +210,56 @@ window.Scene3D = (function () {
     eventTargets.storage.floor = new THREE.Vector3(9.2, 0, -6.2);
     eventTargets.login.floor = new THREE.Vector3(4.2, 0, -5.2);
     // Jonas (neuer Mitarbeiter) steht zunächst am Eingang, sein Platz ist leer
+    buildHall();
     desks[7].person.visible = false; desks[7].occupied = false; desks[7].screen.emissive.setHex(COL.screenOff);
     jonasFigure = person(0x8a94a3, false); jonasFigure.position.copy(entrancePos); jonasFigure.position.x -= 1; scene.add(jonasFigure);
     claudiaDesk = desks[9];
+  }
+
+  /* ---------- OT-Werkhalle ---------- */
+  function buildHall() {
+    hall = new THREE.Group();
+    const add = o => { hall.add(o); return o; };
+    const plinth = box(36, .3, 14, 0xb9c0c8); plinth.position.set(0, -.16, -21); add(plinth);
+    const floor = box(34.5, .06, 12.5, 0xcfd3d8); floor.position.set(0, .03, -21); floor.castShadow = false; add(floor);
+    [[-17, -27.5, 17, -27.5], [-17, -14.5, -2, -14.5], [3, -14.5, 17, -14.5], [-17, -27.5, -17, -14.5], [17, -27.5, 17, -14.5]].forEach(w => { const len = Math.hypot(w[2] - w[0], w[3] - w[1]); const m = box(len, .9, .15, 0xe9ebee); m.position.set((w[0] + w[2]) / 2, .5, (w[1] + w[3]) / 2); m.rotation.y = -Math.atan2(w[3] - w[1], w[2] - w[0]); add(m); });
+    const lab = textSprite('Werkhalle · OT', { color: '#3b4654', bg: 'rgba(255,255,255,.82)', size: 40 }); lab.position.set(0, 3.2, -26.3); add(lab);
+    // Drei Linien mit je drei Maschinen und Förderband
+    for (let line = 0; line < 3; line++) {
+      const z = -25 + line * 3.6;
+      const belt = box(13, .25, .6, 0x4b5563); belt.position.set(-3.5, .4, z); add(belt);
+      for (let k = 0; k < 3; k++) {
+        const x = -9 + k * 5.5;
+        const body = box(2.2, 1.6, 1.6, 0x6f8a7a, { roughness: .6, metalness: .2 }); body.position.set(x, .8, z - 1.3); add(body);
+        const panel = new THREE.Mesh(new THREE.PlaneGeometry(.6, .4), new THREE.MeshStandardMaterial({ color: 0x111820, emissive: 0x5fd38d, emissiveIntensity: .9 })); panel.position.set(x + .9, 1.3, z - .48); add(panel);
+        const beacon = new THREE.Mesh(new THREE.CylinderGeometry(.08, .08, .25, 8), new THREE.MeshStandardMaterial({ color: 0x222222, emissive: 0x5fd38d, emissiveIntensity: .8 })); beacon.position.set(x - .8, 1.75, z - 1.3); add(beacon);
+        machines.push({ line, pos: new THREE.Vector3(x, 0, z - 1.3), panel: panel.material, beacon: beacon.material });
+      }
+      const worker = person(0x3d5a80, false); worker.position.set(-9 + 2.7, 0, z + 1.1); add(worker);
+      const lbl = textSprite('Linie ' + (line + 1), { color: '#3b4654', size: 26, bg: 'rgba(255,255,255,.8)' }); lbl.position.set(-13.5, 1.6, z); add(lbl);
+    }
+    // SPS-Schaltschrank und Zellen-Switch
+    const cab = box(1.2, 2.1, .7, 0xd6d9de, { metalness: .3, roughness: .4 }); cab.position.set(12, 1.05, -25.5); add(cab);
+    const stripe = box(1.2, .12, .02, 0xd6541e); stripe.position.set(12, 1.9, -25.14); add(stripe);
+    const cabL = textSprite('SPS-Schrank', { color: '#3b4654', size: 26, bg: 'rgba(255,255,255,.8)' }); cabL.position.set(12, 2.8, -25.5); add(cabL);
+    const sw = box(.9, 1.4, .6, 0x2b3440, { metalness: .3, roughness: .5 }); sw.position.set(12, .7, -20); add(sw);
+    const swL = textSprite('Zellen-Switch', { color: '#3b4654', size: 26, bg: 'rgba(255,255,255,.8)' }); swL.position.set(12, 2.1, -20); add(swL);
+    // Roboter
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(.5, .6, .5, 16), mat(0xf0b45a)); base.position.set(12, .25, -16.5); add(base);
+    const arm1 = box(.35, 1.6, .35, 0xf0b45a); arm1.position.set(12, 1.2, -16.5); arm1.rotation.z = .3; add(arm1);
+    const arm2 = box(1.4, .3, .3, 0xf0b45a); arm2.position.set(12.8, 1.95, -16.5); arm2.rotation.z = -.2; add(arm2);
+    hall.visible = false; scene.add(hall);
+    const t = (pos, idx, h) => ({ pos: pos.clone().setY(h || 2.4), desks: [], machines: idx, floor: pos.clone().setY(0).add(new THREE.Vector3(0, 0, 1.6)) });
+    const lineIdx = l => machines.map((m, i) => m.line === l ? i : -1).filter(i => i >= 0);
+    const center = idx => { const v = new THREE.Vector3(); idx.forEach(i => v.add(machines[i].pos)); return v.multiplyScalar(1 / idx.length); };
+    eventTargets.ot_plc = t(new THREE.Vector3(12, 0, -25.5), lineIdx(1), 3.2);
+    eventTargets.ot_remote = t(machines[1].pos, [1], 2.6);
+    eventTargets.ot_stop = t(center(lineIdx(0)), lineIdx(0), 2.8);
+    eventTargets.ot_malware = t(center(lineIdx(2)), lineIdx(2), 2.8);
+    eventTargets.ot_network = t(new THREE.Vector3(12, 0, -20), lineIdx(1), 2.6);
+  }
+  function setMachinesBlocked(idx, blocked) {
+    (idx || []).forEach(i => { const m = machines[i]; if (!m) return; m.panel.emissive.setHex(blocked ? COL.screenBad : COL.screenOk); m.beacon.emissive.setHex(blocked ? COL.screenBad : COL.screenOk); });
   }
 
   /* ---------- Marker & Effekte ---------- */
@@ -371,7 +419,7 @@ window.Scene3D = (function () {
     ambient = new THREE.AmbientLight(0xffffff, .15); scene.add(ambient);
     sun = new THREE.DirectionalLight(0xffffff, 1.3); sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048); sun.shadow.camera.near = 1; sun.shadow.camera.far = 140;
-    sun.shadow.camera.left = -40; sun.shadow.camera.right = 40; sun.shadow.camera.top = 40; sun.shadow.camera.bottom = -40; sun.shadow.bias = -0.0008;
+    sun.shadow.camera.left = -45; sun.shadow.camera.right = 45; sun.shadow.camera.top = 45; sun.shadow.camera.bottom = -45; sun.shadow.bias = -0.0008;
     scene.add(sun); scene.add(sun.target);
     clock = new THREE.Clock();
     build(); bindInput(); resize(); updateDaylight();
@@ -388,13 +436,15 @@ window.Scene3D = (function () {
     waiting.length = 0;
     techs.forEach(t => { t.state = 'idle'; t.eventId = null; t.group.position.copy(t.home); t.group.rotation.y = 0; });
     droneTarget = null; drone.position.copy(droneHome);
+    machines.forEach(m => { m.panel.emissive.setHex(COL.screenOk); m.beacon.emissive.setHex(COL.screenOk); });
     desks.forEach((d, i) => { d.blocked = false; d.person.visible = i !== 7; d.occupied = i !== 7; d.screen.emissive.setHex(i === 7 ? COL.screenOff : COL.screenOk); });
     if (jonasFigure) { jonasFigure.visible = true; jonasFigure.position.copy(entrancePos); jonasFigure.position.x -= 1; jonasFigure.userData.walk = null; }
     S.setTickets(0); focus = null;
   };
+  S.setOt = function (on) { if (hall) hall.visible = !!on; cam.radiusWanted = on ? 54 : 46; };
   S.eventStart = function (id, blocked) {
     setMarker(id, blocked ? 'alert' : 'work');
-    const t = eventTargets[id]; if (blocked && t) setDesksBlocked(t.desks, true);
+    const t = eventTargets[id]; if (blocked && t) { setDesksBlocked(t.desks, true); setMachinesBlocked(t.machines, true); }
     if (follow) S.focusEvent(id, 5);
   };
   S.eventStep = function (id, actor, blocked) {
@@ -409,14 +459,14 @@ window.Scene3D = (function () {
   S.eventFinish = function (id, outcome) {
     const t = eventTargets[id]; if (!t) return;
     setMarker(id, outcome === 'prevented' ? 'prevented' : 'done');
-    setDesksBlocked(t.desks, false);
+    setDesksBlocked(t.desks, false); setMachinesBlocked(t.machines, false);
     releaseTech(id);
     if (id === 'onboarding' && jonasFigure && jonasFigure.visible && !jonasFigure.userData.walk) jonasFigure.userData.walk = desks[7].pos.clone().add(new THREE.Vector3(0, 0, 1.4));
     if (id === 'offboarding' && claudiaDesk) { claudiaDesk.person.visible = false; claudiaDesk.occupied = false; claudiaDesk.screen.emissive.setHex(COL.screenOff); }
   };
   S.setBlocked = function (id, blocked) {
     const t = eventTargets[id]; if (!t) return;
-    setDesksBlocked(t.desks, blocked);
+    setDesksBlocked(t.desks, blocked); setMachinesBlocked(t.machines, blocked);
     const m = markers.get(id);
     if (m && m.life === Infinity) { const want = blocked ? 'alert' : 'work'; if (m.kind !== want) setMarker(id, want); }
   };

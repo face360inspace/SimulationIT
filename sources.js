@@ -36,7 +36,8 @@ window.Sources = (function () {
     { id: 'security', name: 'Sicherheit und Compliance' },
     { id: 'org', name: 'Organisation, Finanzen, Wissen' },
     { id: 'people', name: 'Sicht der Mitarbeiter' },
-    { id: 'agents', name: 'KI-Agenten und Bots' }
+    { id: 'agents', name: 'KI-Agenten und Bots' },
+    { id: 'ot', name: 'OT und Produktion', ot: true }
   ];
 
   const SOURCES = [
@@ -363,6 +364,59 @@ window.Sources = (function () {
         return { metrics: m, signals: s, summary: m.agents + ' Agenten · ' + m.active + ' produktiv · ' + pct(m.ownerShare) + ' mit Verantwortlichem · ' + pct(m.guardrailShare) + ' mit Leitplanken' };
       },
       demo(rand) { return [['Virtual Agent IT-Hilfe', 'ServiceNow Virtual Agent', 'Self-Service Standardanfragen', 'Service Desk Lead', 'nur Wissensartikel, keine Aktionen', 'produktiv'], ['RPA Lizenzbuchung', 'UiPath', 'SAP-Benutzer und Lizenzen', '', '', 'produktiv'], ['RPA Rechnungsabgleich', 'UiPath', 'Rechnungsprüfung', 'Finanzen', '', 'produktiv']].map(x => ({ agent: x[0], platform: x[1], useCase: x[2], owner: x[3], guardrails: x[4], status: x[5] })); }
+    },
+    {
+      id: 'otassets', group: 'ot', ot: true, name: 'OT-Asset-Inventar', systems: 'Claroty, Nozomi, Armis, Tenable OT, Cisco Cyber Vision',
+      tells: 'Steuerungen, HMIs und Netzkomponenten mit Firmware, Zone, Betriebssystem-Ende und Schwachstellen. Belegt Inventar, Segmentierung und Monitoring.', fields: ['ot', 'security'],
+      columns: 'asset, type, vendor, firmware, zone, osEndOfLife, criticalVulns, lastSeen',
+      derive(rows) {
+        const zone = rows.map(r => String(col(r, ['zone', 'segment', 'purdue', 'level', 'vlan'])));
+        const eol = rows.map(r => String(col(r, ['osEndOfLife', 'eol', 'endOfLife', 'end_of_life', 'supportEnde', 'unsupported'])).toLowerCase());
+        const vul = rows.map(r => num(col(r, ['criticalVulns', 'vulnerabilities', 'critical', 'schwachstellen', 'cves'])) || 0);
+        const types = {}; rows.forEach(r => { const t = String(col(r, ['type', 'typ', 'class', 'category']) || 'unbekannt'); types[t] = (types[t] || 0) + 1; });
+        const m = { assets: rows.length, zonedShare: share(zone, z => z.trim().length > 0 && !/none|keine|flat|-/.test(z.toLowerCase())), eolShare: share(eol, v => /true|yes|ja|1|eol|ended|abgelaufen/.test(v)), vulnerableShare: share(vul, v => v > 0), criticalVulns: vul.reduce((a, b) => a + b, 0), types };
+        const s = [sig('ot', 2, 1, 'OT-Inventar mit ' + m.assets + ' Assets (' + Object.keys(types).slice(0, 4).map(k => types[k] + ' ' + k).join(', ') + ')'), sig('ot', 3, .8, 'Passive Asset-Erkennung im Einsatz: Firmware und Schwachstellen je Asset bekannt')];
+        if (m.zonedShare >= .9) s.push(sig('ot', 2, .5, pct(m.zonedShare) + ' der Assets einer Zone zugeordnet: Segmentierung umgesetzt')); else if (m.zonedShare < .5) s.push(sig('ot', 2, -.7, 'Nur ' + pct(m.zonedShare) + ' der Assets einer Zone zugeordnet: flaches Produktionsnetz'));
+        if (m.eolShare > .3) s.push(sig('security', 3, -.4, pct(m.eolShare) + ' der OT-Assets laufen mit Betriebssystemen ohne Support'));
+        return { metrics: m, signals: s, summary: m.assets + ' Assets · ' + pct(m.zonedShare) + ' segmentiert · ' + pct(m.eolShare) + ' ohne OS-Support · ' + m.criticalVulns + ' kritische Schwachstellen', calib: { ot_plc: Math.min(5, m.criticalVulns / 12) }, quickWin: m.zonedShare < .5 ? { title: 'Produktionsnetz segmentieren', why: 'Nur ' + pct(m.zonedShare) + ' der ' + m.assets + ' OT-Assets sind einer Zone zugeordnet. Zonen und Conduits nach IEC 62443 begrenzen Ausbreitung und Fernzugriff ohne Eingriff in die Anlagen.', field: 'ot', stage: 2, effort: 'mittel' } : null };
+      },
+      demo(rand) { const out = []; const types = ['PLC', 'PLC', 'HMI', 'HMI', 'Switch', 'SCADA', 'Drive']; for (let i = 0; i < 86; i++) { const t = types[Math.floor(rand() * types.length)]; out.push({ asset: t + '-' + (100 + i), type: t, vendor: rand() < .7 ? 'Siemens' : 'Rockwell', firmware: 'V' + (2 + Math.floor(rand() * 5)) + '.' + Math.floor(rand() * 9), zone: rand() < .35 ? 'Zone 3' : '', osEndOfLife: t === 'HMI' || t === 'SCADA' ? (rand() < .6 ? 'true' : 'false') : 'false', criticalVulns: rand() < .3 ? Math.floor(1 + rand() * 3) : 0, lastSeen: iso(daysAgo(Math.floor(rand() * 20))) }); } return out; }
+    },
+    {
+      id: 'otalarms', group: 'ot', ot: true, name: 'Stillstände aus SCADA und MES', systems: 'MES, SCADA, Instandhaltungssystem',
+      tells: 'Ungeplante Stillstände je Monat, Dauer, Ursachen, Anteil vorhergesagter Ausfälle. Kalibriert Linienstillstände und belegt vorausschauende Wartung.', fields: ['ot'],
+      columns: 'timestamp, line, cause, durationMin, planned, predicted',
+      derive(rows) {
+        const per = months(rows, r => date(col(r, ['timestamp', 'start', 'date', 'zeit'])));
+        const planned = rows.map(r => String(col(r, ['planned', 'geplant', 'type'])).toLowerCase());
+        const unpl = rows.filter((r, i) => !/true|yes|ja|geplant|planned|maintenance/.test(planned[i]));
+        const dur = unpl.map(r => num(col(r, ['durationMin', 'duration', 'dauer', 'minutes']))).filter(v => v !== null);
+        const pred = unpl.map(r => String(col(r, ['predicted', 'vorhergesagt', 'detectedBy', 'erkannt'])).toLowerCase());
+        const m = { stops: rows.length, unplannedPerMonth: unpl.length / per, avgDurationMin: avg(dur), downtimeMinPerMonth: dur.reduce((a, b) => a + b, 0) / per, predictedShare: unpl.length ? share(pred, v => /true|yes|ja|predict|vorher|sensor|monitor/.test(v)) : null };
+        const s = [sig('ot', 2, .5, 'Stillstände werden systematisch erfasst: ' + Math.round(m.unplannedPerMonth) + ' ungeplante je Monat, Ø ' + (m.avgDurationMin !== null ? Math.round(m.avgDurationMin) : '–') + ' Minuten')];
+        if (m.predictedShare !== null) { if (m.predictedShare >= .4) s.push(sig('ot', 4, 1, pct(m.predictedShare) + ' der Ausfälle wurden vorhergesagt: vorausschauende Wartung wirkt')); else if (m.predictedShare >= .15) s.push(sig('ot', 4, .4, pct(m.predictedShare) + ' der Ausfälle vorhergesagt')); else s.push(sig('ot', 4, -.7, 'Nur ' + pct(m.predictedShare) + ' der Ausfälle wurden vorhergesagt')); }
+        return { metrics: m, signals: s, summary: Math.round(m.unplannedPerMonth) + ' ungeplante Stillstände je Monat · Ø ' + (m.avgDurationMin !== null ? Math.round(m.avgDurationMin) : '–') + ' Min · ' + pct(m.predictedShare) + ' vorhergesagt', calib: { ot_stop: m.unplannedPerMonth } };
+      },
+      demo(rand) { const out = []; const causes = ['Sensorfehler', 'Antrieb überhitzt', 'Materialstau', 'Netzwerk MES', 'SPS-Störung', 'Wartung']; for (let i = 0; i < 48; i++) { const c = causes[Math.floor(rand() * causes.length)]; out.push({ timestamp: iso(daysAgo(Math.floor(rand() * 180))), line: 'Linie ' + (1 + Math.floor(rand() * 3)), cause: c, durationMin: Math.round(20 + rand() * 200), planned: c === 'Wartung' ? 'true' : 'false', predicted: rand() < .08 ? 'true' : 'false' }); } return out; }
+    },
+    {
+      id: 'otremote', group: 'ot', ot: true, name: 'Fernwartungssitzungen', systems: 'Secure Remote Access, Jump-Host-Protokolle, VPN-Logs der Hersteller',
+      tells: 'Sitzungen je Monat, Anteil mit Freigabe und Aufzeichnung. Belegt gesteuerte Fernwartung.', fields: ['ot', 'identity'],
+      columns: 'timestamp, vendor, target, approvedBy, recorded, durationMin',
+      derive(rows) {
+        const per = months(rows, r => date(col(r, ['timestamp', 'start', 'date', 'zeit'])));
+        const appr = rows.map(r => String(col(r, ['approvedBy', 'approval', 'freigabe', 'genehmigt'])));
+        const rec = rows.map(r => String(col(r, ['recorded', 'aufgezeichnet', 'recording', 'session_recording'])).toLowerCase());
+        const vendors = Array.from(new Set(rows.map(r => String(col(r, ['vendor', 'hersteller', 'partner', 'user']))))).filter(Boolean);
+        const m = { sessions: rows.length, perMonth: rows.length / per, vendors: vendors.length, approvedShare: share(appr, v => v.trim().length > 1 && !/none|keine|-|n\/a/i.test(v)), recordedShare: share(rec, v => /true|yes|ja|1/.test(v)) };
+        const s = [];
+        if (m.approvedShare >= .9 && m.recordedShare >= .8) s.push(sig('ot', 3, 1, pct(m.approvedShare) + ' der ' + m.sessions + ' Fernwartungssitzungen freigegeben und ' + pct(m.recordedShare) + ' aufgezeichnet'));
+        else if (m.approvedShare >= .6) s.push(sig('ot', 3, .4, pct(m.approvedShare) + ' der Fernwartungssitzungen freigegeben, ' + pct(m.recordedShare) + ' aufgezeichnet'));
+        else s.push(sig('ot', 3, -.8, 'Nur ' + pct(m.approvedShare) + ' der Fernwartungssitzungen mit Freigabe'));
+        if (m.sessions) s.push(sig('ot', 2, .5, 'Fernwartung läuft über einen protokollierten Zugang (' + vendors.length + ' Hersteller)'));
+        return { metrics: m, signals: s, summary: Math.round(m.perMonth) + ' Sitzungen je Monat · ' + vendors.length + ' Hersteller · ' + pct(m.approvedShare) + ' freigegeben · ' + pct(m.recordedShare) + ' aufgezeichnet', calib: { ot_remote: m.perMonth } };
+      },
+      demo(rand) { const out = []; const v = ['Siemens Service', 'Maschinenbau Krüger', 'Robotik Nord']; for (let i = 0; i < 34; i++) out.push({ timestamp: iso(daysAgo(Math.floor(rand() * 180))), vendor: v[Math.floor(rand() * v.length)], target: 'HMI Linie ' + (1 + Math.floor(rand() * 3)), approvedBy: rand() < .45 ? 'M. Keller' : '', recorded: rand() < .2 ? 'true' : 'false', durationMin: Math.round(20 + rand() * 120) }); return out; }
     }
   ];
 
@@ -373,7 +427,7 @@ window.Sources = (function () {
     r.count = rows.length; r.id = id;
     return r;
   }
-  function demoAll(seed) { const rand = rng(seed || 7); const out = {}; SOURCES.forEach(s => { out[s.id] = s.demo(rand); }); return out; }
+  function demoAll(seed, includeOt) { const rand = rng(seed || 7); const out = {}; SOURCES.forEach(s => { if (s.ot && !includeOt) return; out[s.id] = s.demo(rand); }); return out; }
 
   return { GROUPS, SOURCES, derive, demoAll };
 })();

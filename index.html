@@ -66,6 +66,9 @@
         <li><b>Auswertung.</b> Kennzahlen im Vergleich, Wirkung je Ereignis.</li>
         <li><b>Prognose.</b> Viele simulierte Jahre, Bewertung jeder Maßnahme, Roadmap-Vorschlag.</li>
       </ol>
+      <p class="note">Für Unternehmen mit Produktion lässt sich eine OT-Erweiterung zuschalten: ein achtes Handlungsfeld „OT & Produktion“, fünf Produktionsereignisse mit Stillstandskosten, eine Werkhalle in der Szene und OT-Quellen in der Ist-Aufnahme.</p>
+      <ol class="howto" hidden>
+      </ol>
       <div class="actions">
         <button type="button" class="btn primary big" id="startBtn">Mit Ist-Aufnahme starten</button>
         <button type="button" class="btn" id="startPlanBtn">Ohne Kundendaten planen</button>
@@ -91,6 +94,7 @@
             <label>Unternehmen<input type="text" id="custName" placeholder="Name des Kunden" autocomplete="off"></label>
             <label>Mitarbeiter<input type="number" id="custEmployees" min="10" step="10" value="300"></label>
           </div>
+          <label class="switch" style="margin-top:10px"><input type="checkbox" class="otToggle"><span>OT-Landschaft (Produktion) einbeziehen</span></label>
           <div class="src-status" id="srcStatus"></div>
           <div class="actions" style="margin-top:10px">
             <button type="button" class="btn" id="demoBtn">Beispielkunden laden</button>
@@ -244,6 +248,7 @@
           </div>
           <p class="note" id="baseHint"></p>
           <div class="actions" style="margin-top:10px;align-items:center">
+            <label class="switch"><input type="checkbox" class="otToggle"><span>OT-Landschaft (Produktion) einbeziehen</span></label>
             <label class="switch"><input type="checkbox" id="varyBtn"><span>Ereignisse und Zeiten zufällig variieren</span></label>
             <button type="button" class="btn ghost" id="resetPlanBtn">Auswahl leeren</button>
           </div>

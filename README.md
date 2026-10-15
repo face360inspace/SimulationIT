@@ -23,6 +23,16 @@ Eine feste Kopfleiste zeigt den Ablauf als fünf Schritte (1 Ist-Aufnahme, 2 Pla
 
 Ergänzend zwei Wissensseiten: **Reifegrade** (fünf Stufen mit Richtwerten, Perspektiven und Diagrammen) und **Standort** (Selbsteinschätzung über sieben Handlungsfelder mit Entwicklungspfad in Etappen). Die Einschätzung lässt sich als Ausgangslage in die Simulation übernehmen; vorhandene Stufen kosten dann kein Budget.
 
+## OT-Erweiterung
+
+Für Unternehmen mit Produktion lässt sich in der Ist-Aufnahme oder in der Planung die OT-Landschaft zuschalten. Dann gilt:
+
+- Ein achtes Handlungsfeld **OT & Produktion** mit fünf Stufen: keine Transparenz; Inventar und Segmentierung nach Zonen (Purdue, IEC 62443); passives OT-Monitoring und gesteuerte Fernwartung; Anomalieerkennung und vorausschauende Wartung mit Reaktionen innerhalb von Safety-Grenzen; resiliente Produktion mit digitalem Zwilling und Leitplanken. Stufe 4 und 5 setzen wie überall Telemetrie und Automatisierung voraus, die Organisation begrenzt auch OT-Ereignisse.
+- Fünf **Produktionsereignisse** mit Produktionsstillstand als eigener Kennzahl: kritische SPS-Schwachstelle, Fernwartungszugang des Maschinenherstellers, driftender Sensor mit drohendem Linienstillstand, USB-Schadsoftware an einer HMI, Netzwerkstörung in der Fertigungszelle. Stillstand wird mit einem eigenen Kostensatz bewertet (Annahme 3.000 € je Stunde, änderbar) und erscheint im HUD, in der Auswertung und in der Prognose.
+- Eine **Werkhalle** in der 3D-Szene mit drei Linien, HMIs, SPS-Schrank, Zellen-Switch und Roboter; blockierte Linien zeigen rote Anzeigen.
+- Drei **OT-Quellen** in der Ist-Aufnahme: OT-Asset-Inventar (Claroty, Nozomi, Armis, Tenable OT, Cyber Vision), Stillstände aus SCADA und MES, Fernwartungssitzungen. Dazu drei Interviewfragen, OT-Werkzeuge im Erkennungskatalog, OT-Ticketregeln und ein Quick Win für die Segmentierung.
+- OT-Schritte dauern im Transformationspfad die anderthalbfache Zeit, weil sie an Wartungsfenster gebunden sind.
+
 ## Nutzung
 
 Statische Dateien ohne Build-Schritt. `index.html` lokal öffnen oder über einen Webserver ausliefern (zum Beispiel `python3 -m http.server`), für GitHub Pages genügt das Wurzelverzeichnis. three.js wird von cdnjs geladen, Schriften von Google Fonts. Ohne WebGL funktionieren Planung, Protokoll und Auswertung weiterhin.
@@ -38,11 +48,11 @@ Die Anwendung läuft ohne Server. Der Microsoft-Graph-Konnektor nutzt ein eingef
 Alle fachlichen Inhalte liegen in `data.js`:
 
 - `LEVELS`, `PERSPECTIVES`: Reifegrade, Richtwerte, Zitate.
-- `FIELDS`: Handlungsfelder mit Kurztiteln (`short`) und Beschreibungen (`stages`) je Stufe.
+- `FIELDS`: Handlungsfelder mit Kurztiteln (`short`) und Beschreibungen (`stages`) je Stufe; das Feld `ot` gehört zur zuschaltbaren OT-Erweiterung (`setOtEnabled`).
 - `STAGE_COST`, `BUDGETS`, `stageBlocker()`, `effectiveLevel()`: Kosten, Budgets, Voraussetzungen und die Regel, auf welcher Stufe ein Ereignis läuft.
 - `TRANSITIONS`: Fokus, Dauer, Maßnahmen und Erfolgskriterium je Schritt der Roadmap.
 - `PARAMS`: Annahmen der Prognose (Mitarbeiter, Abdeckung, Kostensätze, Investition je Punkt, laufende Kosten, Simulationsläufe, Streuung).
-- `EVENTS`: Ereignisse mit beteiligten Feldern (`fields`), Häufigkeit je Monat (`freq`, je 100 Mitarbeiter oder `perCompany`) und fünf Varianten, jede mit Schritten (`a` Akteur, `t` Text, `d` Dauer in Minuten, `w` Wartehinweis) sowie Aufwand (`it`), Ausfallzeit (`user`), Eingriffen (`touches`), Ticket und Kennzeichen `prevented`.
+- `EVENTS` und `OT_EVENTS`: Ereignisse mit beteiligten Feldern (`fields`), Häufigkeit je Monat (`freq`, je 100 Mitarbeiter oder `perCompany`), optional Produktionsstillstand (`ot`) und fünf Varianten, jede mit Schritten (`a` Akteur, `t` Text, `d` Dauer in Minuten, `w` Wartehinweis) sowie Aufwand (`it`), Ausfallzeit (`user`), Eingriffen (`touches`), Ticket und Kennzeichen `prevented`.
 
 Alle Zahlen sind illustrative Richtwerte, keine Benchmarks.
 

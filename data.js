@@ -21,6 +21,8 @@
    `prevented` = Störung wurde verhindert, bevor jemand sie bemerkt hat
    `freq`    = typische Häufigkeit je Monat und 100 Mitarbeiter, bei
                `perCompany` je Unternehmen; Grundlage der Prognose
+   `ot`      = Produktionsstillstand in Minuten (nur OT-Ereignisse)
+   Ereignisse mit `ot: true` gehören zur zuschaltbaren OT-Erweiterung.
    Alle Zahlen sind illustrative Richtwerte, keine Benchmarks.
    ========================================================================= */
 
@@ -167,8 +169,19 @@ const FIELDS = [
       'Produktteams statt Ticketwarteschlangen, Kennzahlen zum Arbeitserlebnis (XLA) statt nur SLA.',
       'IT als Steuerungsfunktion: Menschen gestalten Policies, Leitplanken und Architektur, Agenten operieren, das System entwickelt sich kontinuierlich weiter.'
     ]
+  },
+  {
+    id: 'ot', ot: true, short: ['Keine Transparenz', 'Inventar & Segmentierung', 'OT-Monitoring & gesteuerte Fernwartung', 'Anomalieerkennung & vorausschauende Wartung', 'Resiliente Produktion mit Leitplanken'], name: 'OT & Produktion',
+    stages: [
+      'Steuerungen, HMIs und Industrienetze sind nicht inventarisiert, Fernwartung läuft über Herstellerzugänge ohne Kontrolle, Firmware wird nie aktualisiert.',
+      'OT-Asset-Inventar und Netzsegmentierung nach Zonen (Purdue, IEC 62443) dokumentiert, Fernwartung über Jump-Host, Wartungsfenster geplant.',
+      'Passives OT-Monitoring (Asset-Erkennung, Verkehrsanalyse), gesteuerte Fernwartung mit Freigabe und Aufzeichnung, Firmware-Register, IT- und OT-Prozesse gemeinsam im ITSM.',
+      'Anomalieerkennung und vorausschauende Wartung aus Maschinendaten, automatisierte Reaktionen innerhalb von Safety-Grenzen (Isolation, Quarantäne), Schwachstellen risikobasiert im Wartungsfenster geschlossen.',
+      'Resiliente Produktion: digitaler Zwilling der Anlagen, Agenten steuern Wartung, Patches und Zugriffe innerhalb von Safety-Leitplanken, Nachweise nach IEC 62443 entstehen automatisch.'
+    ]
   }
 ];
+const FIELDS_ALL = FIELDS.slice();
 
 /* Der Schritt von Stufe n auf Stufe n+1. Index 0 = von 1 auf 2. */
 const TRANSITIONS = [
@@ -180,7 +193,8 @@ const TRANSITIONS = [
       'Servicekatalog mit den 20 häufigsten Anfragen schreiben',
       'Inventar und CMDB aufbauen, Standard-Hardware festlegen',
       'Zentrales Monitoring für Server, Netz und Cloud',
-      'Rollen, Vertretungen und Eskalationswege dokumentieren'
+      'Rollen, Vertretungen und Eskalationswege dokumentieren',
+      'OT: Asset-Inventar der Steuerungen und Netzsegmentierung nach Zonen dokumentieren'
     ],
     success: '100 % der Anfragen laufen über einen Kanal, das Inventar ist vollständig, SLAs werden gemessen.'
   },
@@ -193,7 +207,8 @@ const TRANSITIONS = [
       'Identitäten aus dem HR-System provisionieren (Eintritt, Wechsel, Austritt)',
       'Self-Service-Portal mit Wissensdatenbank anbieten',
       'Patch-Automatisierung inklusive Drittanbieter, Skripte in Git versionieren',
-      'Rolle „Automation Engineer“ besetzen und Zeit für Automatisierung reservieren'
+      'Rolle „Automation Engineer“ besetzen und Zeit für Automatisierung reservieren',
+      'OT: passives Monitoring einführen, Fernwartung über gesteuerten Zugang mit Aufzeichnung'
     ],
     success: '40 % der Anfragen werden ohne manuellen Schritt erledigt, neue Geräte sind am ersten Tag einsatzbereit.'
   },
@@ -206,7 +221,8 @@ const TRANSITIONS = [
       'Alarme korrelieren (AIOps) und Runbooks an Alarme koppeln',
       'Freigabe-Workflows für automatische Maßnahmen einführen',
       'XLAs definieren, Produktteams statt Warteschlangen organisieren',
-      'Conditional Access und risikobasierte Schwachstellenbehandlung'
+      'Conditional Access und risikobasierte Schwachstellenbehandlung',
+      'OT: Anomalieerkennung und vorausschauende Wartung aus Maschinendaten, Reaktionen innerhalb von Safety-Grenzen'
     ],
     success: 'Mehr als 50 % der Störungen werden erkannt, bevor ein Mitarbeiter sie meldet.'
   },
@@ -219,7 +235,8 @@ const TRANSITIONS = [
       'Digitaler Zwilling für Changes und Rollouts',
       'Vollständiger Audit-Trail jeder automatischen Entscheidung',
       'Rollen zu Steuerung, Architektur und Policy-Design weiterentwickeln',
-      'Passwordless und kontinuierliche Verifikation flächendeckend'
+      'Passwordless und kontinuierliche Verifikation flächendeckend',
+      'OT: digitaler Zwilling der Anlagen, Agenten mit Safety-Leitplanken für Wartung, Patches und Zugriffe'
     ],
     success: 'Mehr als 90 % der Fälle ohne menschlichen Eingriff, jede Entscheidung nachvollziehbar.'
   }
@@ -849,6 +866,187 @@ const EVENTS = [
   }
 ];
 
+
+/* ---------- OT-Ereignisse (zuschaltbar) ---------- */
+const OT_EVENTS = [
+  {
+    id: 'ot_plc', ot: true, start: T(9, 40), freq: 0.5, perCompany: true, fields: ['ot', 'security'],
+    title: 'Kritische Schwachstelle in der SPS-Firmware von Linie 2',
+    v: [
+      { title: 'Hersteller-Advisory bleibt unbemerkt', steps: [
+        { a: 'tech', t: 'Der Hersteller veröffentlicht ein Advisory. Niemand weiß, welche Steuerungen mit welcher Firmware laufen.', d: 240, w: 'Anlage angreifbar, Umfang unbekannt.' },
+        { a: 'tech', t: 'Nach einem Hinweis des Maschinenherstellers entsteht per Rundgang eine Liste betroffener Steuerungen.', d: 240 },
+        { a: 'ma', t: 'Das Firmware-Update wird auf unbestimmte Zeit verschoben. Die Produktion läuft ungeschützt weiter.', d: 0 }
+      ], it: 480, user: 0, ot: 0, touches: 4, ticket: false, risk: 'Produktion über Wochen angreifbar' },
+      { title: 'Update im Wochenend-Wartungsfenster', steps: [
+        { a: 'sys', t: 'Das Advisory erreicht die IT über den Patch-Prozess. Das Inventar nennt 14 betroffene Steuerungen.', d: 60 },
+        { a: 'tech', t: 'Abstimmung mit der Produktion über ein Wartungsfenster am Wochenende.', d: 240, w: 'Warten auf das Wartungsfenster.' },
+        { a: 'tech', t: 'Update im Wartungsfenster. Zwei Steuerungen starten nicht sauber, Linie 2 steht drei Stunden länger.', d: 180 },
+        { a: 'ma', t: 'Linie 2 läuft wieder.', d: 0 }
+      ], it: 420, user: 0, ot: 180, touches: 4, ticket: true },
+      { title: 'OT-Monitoring meldet betroffene Assets automatisch', steps: [
+        { a: 'sys', t: 'Das OT-Monitoring meldet das Advisory mit den betroffenen Assets ins ITSM, Risiko bewertet.', d: 15 },
+        { a: 'tech', t: 'Techniker plant das Update im nächsten Wartungsfenster. Die Segmentierung begrenzt die Erreichbarkeit vorerst.', d: 60 },
+        { a: 'sys', t: 'Update im Wartungsfenster per Herstellerwerkzeug. Linie 2 läuft planmäßig wieder an.', d: 120 },
+        { a: 'ma', t: 'Kein ungeplanter Stillstand.', d: 0 }
+      ], it: 120, user: 0, ot: 0, touches: 2, ticket: true },
+      { title: 'Virtuelles Patchen bis zum Wartungsfenster', steps: [
+        { a: 'sys', t: 'Anomalieerkennung bewertet: Schwachstelle nur aus Zone 3 erreichbar, keine aktive Ausnutzung, Risiko mittel.', d: 2 },
+        { a: 'ai', t: 'Vorschlag: Zugriff per Firewall-Regel auf die Engineering-Station begrenzen, Firmware-Update ins geplante Fenster.', d: 3 },
+        { a: 'mgr', t: 'Der OT-Verantwortliche gibt frei.', d: 20 },
+        { a: 'sys', t: 'Regel aktiv, Update terminiert, Nachweis für IEC 62443 abgelegt.', d: 5 },
+        { a: 'ma', t: 'Produktion unberührt.', d: 0 }
+      ], it: 15, user: 0, ot: 0, touches: 1, ticket: false, prevented: true },
+      { title: 'Policy „OT-Schwachstelle ohne Exploit“ greift', steps: [
+        { a: 'sys', t: 'Advisory, Inventar und Angriffsfläche werden automatisch korreliert.', d: 1 },
+        { a: 'ai', t: 'Policy: virtuelles Patchen sofort, Firmware im nächsten Fenster, Safety-Freigabe liegt vor.', d: 2 },
+        { a: 'sys', t: 'Produktion unberührt, Lagebild im OT-Dashboard.', d: 0 }
+      ], it: 0, user: 0, ot: 0, touches: 0, ticket: false, prevented: true }
+    ]
+  },
+  {
+    id: 'ot_remote', ot: true, start: T(10, 50), freq: 2, perCompany: true, fields: ['ot', 'identity'],
+    title: 'Fernwartungszugang des Maschinenherstellers auf die HMI von Linie 1',
+    v: [
+      { title: 'Herstellerzugang ohne Kontrolle', steps: [
+        { a: 'ma', t: 'Der Hersteller wählt sich per Fernwartungswerkzeug auf die HMI der Linie 1 ein. In der IT weiß niemand davon.', d: 90, w: 'Sitzung läuft unbeobachtet.' },
+        { a: 'tech', t: 'Ein Techniker erfährt zufällig davon. Änderungen an der Steuerung sind nicht dokumentiert.', d: 0 }
+      ], it: 15, user: 0, ot: 0, touches: 1, ticket: false, risk: 'Unkontrollierter Zugriff auf Steuerungen' },
+      { title: 'Freischaltung über Jump-Host auf Zuruf', steps: [
+        { a: 'ma', t: 'Der Hersteller fragt per E-Mail einen Fernzugriff an.', d: 60 },
+        { a: 'tech', t: 'Der Zugang über den Jump-Host wird von Hand freigeschaltet und nach Zuruf wieder gesperrt.', d: 120, w: 'Zugang offen.' },
+        { a: 'tech', t: 'Zugang gesperrt, Protokoll per E-Mail.', d: 0 }
+      ], it: 60, user: 0, ot: 0, touches: 2, ticket: true },
+      { title: 'Gesteuerter Fernzugang mit Aufzeichnung', steps: [
+        { a: 'ma', t: 'Herstellerantrag im Portal, Freigabe durch den Anlagenverantwortlichen.', d: 30 },
+        { a: 'sys', t: 'Sitzung über den gesteuerten Fernzugang: aufgezeichnet, zeitlich begrenzt, automatisch beendet.', d: 90 },
+        { a: 'sys', t: 'Sitzungsprotokoll im Ticket abgelegt.', d: 0 }
+      ], it: 10, user: 0, ot: 0, touches: 1, ticket: true },
+      { title: 'Risikobasierte Prüfung mit Änderungsprotokoll', steps: [
+        { a: 'sys', t: 'Zugriff wird risikobasiert geprüft: Hersteller, Zielzone, Wartungsfenster.', d: 2 },
+        { a: 'ai', t: 'Vorschlag: Sitzung auf HMI Linie 1 begrenzen, Mitschnitt, Änderungen an der Steuerung protokollieren.', d: 2 },
+        { a: 'mgr', t: 'Der Anlagenverantwortliche bestätigt.', d: 15 },
+        { a: 'sys', t: 'Sitzung läuft überwacht, Änderungsprotokoll in die CMDB.', d: 90 },
+        { a: 'sys', t: 'Sitzung beendet.', d: 0 }
+      ], it: 5, user: 0, ot: 0, touches: 1, ticket: false },
+      { title: 'Just-in-time-Zugang nach Policy', steps: [
+        { a: 'ai', t: 'Policy „Fernwartung Hersteller, Zone 3, Wartungsfenster“ greift: Just-in-time-Zugang, Aufzeichnung, Abweichungsalarm.', d: 2 },
+        { a: 'sys', t: 'Sitzung automatisch beendet, Änderungen mit dem digitalen Zwilling abgeglichen.', d: 90 },
+        { a: 'sys', t: 'Eintrag im Tagesbericht.', d: 0 }
+      ], it: 0, user: 0, ot: 0, touches: 0, ticket: false }
+    ]
+  },
+  {
+    id: 'ot_stop', ot: true, start: T(13, 40), freq: 3, perCompany: true, fields: ['ot', 'telemetry'],
+    title: 'Sensor an Linie 1 driftet, Stillstand droht',
+    v: [
+      { title: 'Linie 1 steht, Fehlersuche vor Ort', steps: [
+        { a: 'ma', t: 'Linie 1 stoppt wegen eines Sensorfehlers. Der Schichtleiter ruft die Instandhaltung.', d: 30, w: 'Linie 1 steht.' },
+        { a: 'tech', t: 'Fehlersuche vor Ort, Ersatzsensor aus dem Lager.', d: 150, w: 'Linie 1 steht weiter.' },
+        { a: 'ma', t: 'Linie läuft nach drei Stunden wieder, Nacharbeit nötig.', d: 0 }
+      ], it: 180, user: 0, ot: 180, touches: 3, ticket: true },
+      { title: 'Ticket mit Priorität 1, Tausch nach Wartungsplan', steps: [
+        { a: 'ma', t: 'Stillstand gemeldet, Ticket an die Instandhaltung mit Priorität 1.', d: 15, w: 'Linie 1 steht.' },
+        { a: 'tech', t: 'Ersatz nach Wartungsplan vorhanden, Tausch in 90 Minuten.', d: 90 },
+        { a: 'ma', t: 'Linie läuft wieder.', d: 0 }
+      ], it: 90, user: 0, ot: 105, touches: 2, ticket: true },
+      { title: 'OT-Monitoring meldet die Abweichung vorab', steps: [
+        { a: 'sys', t: 'Das OT-Monitoring meldet eine Sensorabweichung. Ein Ticket mit Anlagendaten entsteht automatisch.', d: 10 },
+        { a: 'tech', t: 'Der Instandhalter tauscht den Sensor beim Schichtwechsel, die Linie läuft bis dahin mit Toleranz weiter.', d: 60 },
+        { a: 'ma', t: 'Kurzer Stopp beim Schichtwechsel.', d: 0 }
+      ], it: 45, user: 0, ot: 20, touches: 1, ticket: true },
+      { title: 'Vorausschauende Wartung: Ausfall in vier Tagen', steps: [
+        { a: 'sys', t: 'Vorausschauende Wartung: Die Drift überschreitet die Prognose, Ausfall in etwa vier Tagen.', d: 2 },
+        { a: 'ai', t: 'Vorschlag: Tausch im geplanten Wartungsfenster am Donnerstag, Ersatzteil bestellen.', d: 2 },
+        { a: 'mgr', t: 'Der Instandhaltungsleiter bestätigt.', d: 20 },
+        { a: 'sys', t: 'Auftrag und Ersatzteil im MES, kein Stillstand.', d: 5 },
+        { a: 'ma', t: 'Produktion läuft weiter.', d: 0 }
+      ], it: 10, user: 0, ot: 0, touches: 1, ticket: false, prevented: true },
+      { title: 'Agent plant Tausch und Ersatzteil selbst', steps: [
+        { a: 'ai', t: 'Der Agent plant den Tausch im Wartungsfenster, bestellt das Ersatzteil und informiert die Schichtleitung.', d: 3 },
+        { a: 'sys', t: 'Produktion unberührt, Eintrag im Tagesbericht.', d: 0 }
+      ], it: 0, user: 0, ot: 0, touches: 0, ticket: false, prevented: true }
+    ]
+  },
+  {
+    id: 'ot_malware', ot: true, start: T(15, 30), freq: 0.3, perCompany: true, fields: ['ot', 'security'],
+    title: 'USB-Stick mit Schadsoftware an der HMI von Linie 3',
+    v: [
+      { title: 'Schadsoftware im flachen Produktionsnetz', steps: [
+        { a: 'ma', t: 'Ein Servicetechniker steckt einen USB-Stick an die HMI. Die Schadsoftware breitet sich im flachen Produktionsnetz aus.', d: 120, w: 'Infektion breitet sich aus.' },
+        { a: 'tech', t: 'Linie 3 fällt aus, danach Linie 2. IT und Hersteller suchen tagelang.', d: 480, w: 'Zwei Linien stehen.' },
+        { a: 'ma', t: 'Produktion nach Tagen wieder angelaufen.', d: 0 }
+      ], it: 960, user: 0, ot: 720, touches: 5, ticket: true, risk: 'Produktionsausfall über Tage' },
+      { title: 'Segmentierung hält die Ausbreitung auf', steps: [
+        { a: 'ma', t: 'Die HMI der Linie 3 verhält sich merkwürdig, Meldung an die IT.', d: 60, w: 'Linie 3 steht.' },
+        { a: 'tech', t: 'Die Segmentierung hält die Ausbreitung in Zelle 3. Die HMI wird aus dem Image neu aufgesetzt.', d: 240 },
+        { a: 'ma', t: 'Linie 3 läuft wieder.', d: 0 }
+      ], it: 300, user: 0, ot: 300, touches: 3, ticket: true },
+      { title: 'OT-Monitoring alarmiert das SOC', steps: [
+        { a: 'sys', t: 'Das OT-Monitoring erkennt ungewöhnlichen Verkehr von der HMI, Alarm ins SOC.', d: 10 },
+        { a: 'tech', t: 'Der Analyst isoliert Zelle 3 per Firewall, die HMI wird neu aufgesetzt.', d: 120, w: 'Linie 3 steht.' },
+        { a: 'ma', t: 'Linie 3 läuft wieder.', d: 0 }
+      ], it: 150, user: 0, ot: 120, touches: 2, ticket: true },
+      { title: 'Isolation nach Safety-Prüfung', steps: [
+        { a: 'sys', t: 'Anomalie erkannt, USB-Ereignis korreliert.', d: 1 },
+        { a: 'ai', t: 'Vorschlag: HMI isolieren (Safety-Prüfung: Linie kann sicher stoppen), Image zurückspielen.', d: 2 },
+        { a: 'mgr', t: 'Der OT-Sicherheitsverantwortliche gibt frei.', d: 10 },
+        { a: 'sys', t: 'Isolation und Wiederherstellung in 40 Minuten.', d: 40 },
+        { a: 'ma', t: 'Linie 3 läuft wieder.', d: 0 }
+      ], it: 30, user: 0, ot: 50, touches: 1, ticket: false },
+      { title: 'USB-Policy blockiert das Gerät', steps: [
+        { a: 'sys', t: 'Die USB-Port-Policy blockiert unbekannte Geräte an HMIs. Der Versuch wird protokolliert.', d: 1 },
+        { a: 'ai', t: 'Der Agent informiert Hersteller und Anlagenverantwortlichen. Keine Auswirkung.', d: 1 },
+        { a: 'sys', t: 'Eintrag im Tagesbericht.', d: 0 }
+      ], it: 0, user: 0, ot: 0, touches: 0, ticket: false, prevented: true }
+    ]
+  },
+  {
+    id: 'ot_network', ot: true, start: T(8, 30), freq: 1.5, perCompany: true, fields: ['ot', 'telemetry'],
+    title: 'Netzwerkstörung in Fertigungszelle 2',
+    v: [
+      { title: 'Linie 2 produziert blind', steps: [
+        { a: 'ma', t: 'Linie 2 verliert die Verbindung zum MES. Aufträge laufen nicht mehr, der Schichtleiter telefoniert.', d: 40, w: 'Linie 2 produziert blind.' },
+        { a: 'tech', t: 'Der Netzwerker findet nach zwei Stunden einen defekten Switch in der Zelle. Ersatz wird von Hand konfiguriert.', d: 120, w: 'Linie 2 steht.' },
+        { a: 'ma', t: 'Linie 2 läuft wieder.', d: 0 }
+      ], it: 150, user: 0, ot: 160, touches: 3, ticket: true },
+      { title: 'Switch rot im Monitoring, Tausch von Hand', steps: [
+        { a: 'sys', t: 'Das Monitoring zeigt den Switch rot. Ein Ticket wird manuell erstellt.', d: 20, w: 'Linie 2 steht.' },
+        { a: 'tech', t: 'Ersatzswitch aus dem Lager, Konfiguration von Hand.', d: 90 },
+        { a: 'ma', t: 'Linie 2 läuft wieder.', d: 0 }
+      ], it: 90, user: 0, ot: 110, touches: 2, ticket: true },
+      { title: 'Runbook aktiviert den Redundanzpfad', steps: [
+        { a: 'sys', t: 'Das OT-Monitoring erkennt den Ausfall. Das Runbook aktiviert den Redundanzpfad, Ticket an das Netzwerkteam.', d: 5 },
+        { a: 'tech', t: 'Switch im Wartungsfenster getauscht, Konfiguration aus Template.', d: 60 },
+        { a: 'ma', t: 'Fünf Minuten Unterbrechung.', d: 0 }
+      ], it: 40, user: 0, ot: 5, touches: 1, ticket: true },
+      { title: 'Ausfall vorhergesagt, Tausch im Wartungsfenster', steps: [
+        { a: 'sys', t: 'Telemetrie: Die Fehlerrate des Switch steigt seit drei Tagen, Ausfall wahrscheinlich.', d: 1 },
+        { a: 'ai', t: 'Vorschlag: Tausch im Wartungsfenster, Redundanz vorab prüfen.', d: 2 },
+        { a: 'mgr', t: 'Der Netzwerk-Admin bestätigt.', d: 15 },
+        { a: 'sys', t: 'Getauscht, kein Stillstand.', d: 30 },
+        { a: 'ma', t: 'Produktion läuft weiter.', d: 0 }
+      ], it: 30, user: 0, ot: 0, touches: 1, ticket: false, prevented: true },
+      { title: 'Austausch automatisch geplant', steps: [
+        { a: 'sys', t: 'Prädiktive Analyse, Redundanzprüfung und Austausch werden automatisch geplant.', d: 2 },
+        { a: 'ai', t: 'Der Facility-Dienst tauscht nach Anleitung, die Konfiguration kommt aus dem Zwilling.', d: 20 },
+        { a: 'sys', t: 'Eintrag im Tagesbericht.', d: 0 }
+      ], it: 0, user: 0, ot: 0, touches: 0, ticket: false, prevented: true }
+    ]
+  }
+];
+const EVENTS_ALL = EVENTS.concat(OT_EVENTS);
+
+/* Schaltet die OT-Erweiterung zu oder ab. FIELDS und EVENTS werden an Ort und
+   Stelle verändert, damit alle Module dieselben Listen sehen. */
+function setOtEnabled(on) {
+  const fields = FIELDS_ALL.filter(f => on || !f.ot);
+  FIELDS.splice(0, FIELDS.length); fields.forEach(f => FIELDS.push(f));
+  const events = EVENTS_ALL.filter(e => on || !e.ot).slice().sort((a, b) => a.start - b.start);
+  EVENTS.splice(0, EVENTS.length); events.forEach(e => EVENTS.push(e));
+  PARAMS.ot = !!on;
+}
+
 const DAY_START = T(7, 0);
 const DAY_END = T(19, 30);
 
@@ -859,7 +1057,7 @@ const BUDGETS = [
   { points: 12, name: 'Sparsam', desc: 'Ein erstes Jahresbudget. Prioritäten setzen.' },
   { points: 20, name: 'Ambitioniert', desc: 'Ein mehrjähriges Programm.' },
   { points: 30, name: 'Transformation', desc: 'Breite Modernisierung über alle Felder.' },
-  { points: 70, name: 'Unbegrenzt', desc: 'Alles ist möglich. Zum Ausprobieren.' }
+  { points: 80, name: 'Unbegrenzt', desc: 'Alles ist möglich. Zum Ausprobieren.' }
 ];
 
 /* Voraussetzungen über Handlungsfelder hinweg. Liefert null oder einen Grund, warum
@@ -893,6 +1091,7 @@ const PARAMS = {
   rateIT: 75,           // Kosten je Stunde IT-Arbeitszeit
   rateUser: 60,         // Kosten je Stunde Produktivitätsverlust
   ticketCost: 15,       // Bearbeitungskosten je Ticket (Erfassung, Kommunikation)
+  rateOT: 3000,         // Kosten je Stunde Produktionsstillstand (OT)
   eurPerPoint: 15000,   // Einmalinvestition je Budgetpunkt
   opexShare: 0.2,       // laufende Kosten je Jahr, Anteil der Investition
   runs: 200,            // simulierte Jahre je Konfiguration
@@ -900,6 +1099,6 @@ const PARAMS = {
 };
 const PARAM_LABELS = {
   employees: ['Mitarbeiter', ''], coverage: ['Abdeckung durch die elf Ereignistypen', '%'], workdays: ['Arbeitstage je Jahr', ''],
-  rateIT: ['Kosten je IT-Stunde', '€'], rateUser: ['Kosten je Ausfallstunde', '€'], ticketCost: ['Bearbeitungskosten je Ticket', '€'],
+  rateIT: ['Kosten je IT-Stunde', '€'], rateUser: ['Kosten je Ausfallstunde', '€'], ticketCost: ['Bearbeitungskosten je Ticket', '€'], rateOT: ['Kosten je Stunde Produktionsstillstand (OT)', '€'],
   eurPerPoint: ['Investition je Budgetpunkt', '€'], opexShare: ['Laufende Kosten je Jahr', '% der Investition'], runs: ['Simulierte Jahre', ''], spread: ['Streuung der Aufwände', '±%']
 };

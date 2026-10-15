@@ -34,17 +34,17 @@ window.Analysis = (function () {
 
   /* Erwartungswerte je Jahr (deterministisch). */
   function expected(levels, P) {
-    const t = { it: 0, user: 0, tickets: 0, touches: 0, prevented: 0, occurrences: 0 };
+    const t = { it: 0, user: 0, ot: 0, tickets: 0, touches: 0, prevented: 0, occurrences: 0 };
     variants(levels).forEach(x => {
       const n = perYear(x.e, P);
-      t.occurrences += n; t.it += n * x.v.it; t.user += n * x.v.user; t.touches += n * x.v.touches;
+      t.occurrences += n; t.it += n * x.v.it; t.user += n * x.v.user; t.ot += n * (x.v.ot || 0); t.touches += n * x.v.touches;
       if (x.v.ticket) t.tickets += n;
       if (x.v.prevented || x.v.touches === 0) t.prevented += n;
     });
     t.cost = cost(t, P);
     return t;
   }
-  function cost(t, P) { return t.it / 60 * P.rateIT + t.user / 60 * P.rateUser + t.tickets * P.ticketCost; }
+  function cost(t, P) { return t.it / 60 * P.rateIT + t.user / 60 * P.rateUser + (t.ot || 0) / 60 * (P.rateOT || 0) + t.tickets * P.ticketCost; }
 
   /* Monte-Carlo: viele Jahre, jeweils Vorkommen je Ereignistyp und gestreute Aufwände. */
   function simulate(levels, P, seed) {
@@ -52,12 +52,12 @@ window.Analysis = (function () {
     const rand = rng(seed || 1);
     const years = [];
     for (let r = 0; r < P.runs; r++) {
-      const t = { it: 0, user: 0, tickets: 0, touches: 0, prevented: 0, occurrences: 0 };
+      const t = { it: 0, user: 0, ot: 0, tickets: 0, touches: 0, prevented: 0, occurrences: 0 };
       vs.forEach(x => {
         const n = poisson(perYear(x.e, P), rand);
         for (let i = 0; i < n; i++) {
           const f = 1 - P.spread + rand() * 2 * P.spread;
-          t.it += x.v.it * f; t.user += x.v.user * f; t.touches += x.v.touches;
+          t.it += x.v.it * f; t.user += x.v.user * f; t.ot += (x.v.ot || 0) * f; t.touches += x.v.touches;
           if (x.v.ticket) t.tickets++;
           if (x.v.prevented || x.v.touches === 0) t.prevented++;
         }
@@ -75,7 +75,7 @@ window.Analysis = (function () {
   }
   function summary(levels, P, seed) {
     const years = simulate(levels, P, seed);
-    return { levels: Object.assign({}, levels), exp: expected(levels, P), it: stats(years, 'it'), user: stats(years, 'user'), tickets: stats(years, 'tickets'), touches: stats(years, 'touches'), prevented: stats(years, 'prevented'), cost: stats(years, 'cost'), occurrences: stats(years, 'occurrences') };
+    return { levels: Object.assign({}, levels), exp: expected(levels, P), it: stats(years, 'it'), user: stats(years, 'user'), ot: stats(years, 'ot'), tickets: stats(years, 'tickets'), touches: stats(years, 'touches'), prevented: stats(years, 'prevented'), cost: stats(years, 'cost'), occurrences: stats(years, 'occurrences') };
   }
 
   /* Eine Maßnahme: ein Feld um eine Stufe anheben. */

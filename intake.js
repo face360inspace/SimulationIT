@@ -143,6 +143,7 @@ window.Intake = (function () {
       if (t.ssd && t.ssd.count >= 8 && levels.endpoint < 3) add({ title: 'Zero-Touch-Provisioning für Poolgeräte', why: t.ssd.count + ' Hardwarestörungen' + (t.ssd.mttr ? ' mit Ø ' + t.ssd.mttr.toFixed(0) + ' h Ausfall' : '') + '. Vorkonfigurierte Poolgeräte mit Autopilot verkürzen den Ausfall auf unter eine Stunde.', field: 'endpoint', stage: 3, effort: 'mittel' });
       if (m.reopenRate > 0.12) add({ title: 'Wissensdatenbank und Lösungsqualität', why: pct(m.reopenRate) + ' der Tickets werden wiedereröffnet. Dokumentierte Standardlösungen und Qualitätsprüfung senken Mehrfacharbeit.', field: 'service', stage: 3, effort: 'gering' });
     }
+    if (m && m.tickets && m.byType) { const ot = ['ot_stop', 'ot_remote', 'ot_plc', 'ot_malware', 'ot_network'].reduce((a, k) => a + (m.byType[k] ? m.byType[k].count : 0), 0); if (ot >= 5 && levels.ot && levels.ot < 3) add({ title: 'OT-Störungen über das ITSM mit Anlagendaten abwickeln', why: ot + ' Tickets betreffen Produktion, Steuerungen oder Fernwartung, werden aber wie IT-Tickets behandelt. Ein OT-Inventar im ITSM verknüpft Störung, Anlage und Wartungsfenster.', field: 'ot', stage: 2, effort: 'gering' }); }
     (candidates || []).filter(c => !c.blocker && c.payback <= 12 && c.cost.points <= 2 && !wins.some(w => w.field === c.field.id)).forEach(c => add({ title: c.field.name + ' auf Stufe ' + c.stage + ': ' + c.title, why: 'Amortisiert sich in der Prognose nach ' + Math.round(c.payback) + ' Monaten bei ' + c.cost.points + ' Punkten Investition.', field: c.field.id, stage: c.stage, effort: 'gering' }));
     return wins;
   }
@@ -154,7 +155,7 @@ window.Intake = (function () {
     const laneEnd = new Array(lanes).fill(0);
     const out = [];
     steps.forEach((s, i) => {
-      const dur = STEP_MONTHS[s.stage] * (s.field.id === 'org' ? 1.3 : 1);
+      const dur = STEP_MONTHS[s.stage] * (s.field.id === 'org' ? 1.3 : (s.field.id === 'ot' ? 1.5 : 1));
       const before = i ? steps[i - 1].levels : (startLevels || {});
       let earliest = 0;
       for (let j = 0; j < i; j++) {
