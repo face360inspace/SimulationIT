@@ -740,6 +740,13 @@ code { font-family: var(--font-mono); font-size: .78em; background: var(--surfac
 .goal .gv { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; font-size: .82rem; color: var(--fg-2); }
 .goal .gv input { width: 96px; font: inherit; font-size: .9rem; padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--surface); color: var(--fg); text-align: right; }
 .goal .gnote { font-size: .74rem; color: var(--fg-3); }
+.goal.wide { grid-column: 1 / -1; }
+.goal .segments { background: var(--surface); flex-wrap: wrap; border-radius: 18px; margin: 0; }
+.level-expl { background: var(--surface); border-radius: var(--radius-s); padding: 10px 12px; font-size: .82rem; color: var(--fg-2); display: flex; flex-direction: column; gap: 5px; align-items: flex-start; }
+.level-expl b { font-family: var(--font-display); color: var(--fg); font-size: .9rem; }
+.level-expl p { margin: 0; }
+.level-expl .kpi { font-family: var(--font-mono); font-size: .74rem; color: var(--fg-3); }
+.btn.small { padding: 5px 12px; font-size: .8rem; }
 .goal .gnote.twin { color: var(--agent-ink); background: var(--agent-soft); border-radius: var(--radius-s); padding: 4px 8px; }
 .verdict { border-radius: var(--radius); padding: 12px 14px; }
 .verdict.ok { background: var(--agent-soft); color: var(--agent-ink); }

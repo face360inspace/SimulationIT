@@ -1320,6 +1320,13 @@
     $('#goalsTwinNote').textContent = hasTwin ? 'Der Digital Twin liegt vor: Zu jedem Ziel steht der heutige Wert und der daraus abgeleitete Zielwert.' : 'Relative Ziele beziehen sich auf den Zustand heute. Den liefert der Digital Twin in Schritt 3; die Prüfung der Ziele folgt in Schritt 4.';
     $('#goalList').innerHTML = GOAL_DEFS.filter(g => !g.ot || state.ot).map(g => {
       const it = G.items[g.id]; const t = base ? goalTarget(g, base) : null;
+      if (g.id === 'level') {
+        const lv = LEVELS[Math.max(1, Math.min(5, Math.round(it.v))) - 1];
+        return '<div class="goal wide' + (it.on ? '' : ' off') + '"><div class="gh"><b>' + g.name + '</b><label class="switch"><input type="checkbox" data-goal-on="' + g.id + '"' + (it.on ? ' checked' : '') + '><span></span></label></div>' +
+          '<div class="segments wrap" role="group" aria-label="Zielstufe">' + LEVELS.filter(l => l.n >= 2).map(l => '<button type="button" data-goal-level="' + l.n + '" aria-pressed="' + (l.n === it.v) + '"><span class="n">' + l.n + '</span><span class="lbl">' + l.name + '</span></button>').join('') + '</div>' +
+          '<div class="level-expl"><b>Stufe ' + lv.n + ' · ' + lv.name + ': ' + esc(lv.tagline) + '</b><p>' + esc(lv.desc) + '</p><p class="kpi">Richtwerte: ohne menschlichen Eingriff ' + lv.kpi.auto + ' · Tickets je 100 Mitarbeiter und Monat ' + lv.kpi.tickets + ' · Lösungszeit ' + lv.kpi.mttr + ' · vorab erkannt ' + lv.kpi.proactive + '</p><p>' + esc(lv.role) + ' ' + g.note + '</p><button type="button" class="btn small" data-goal-levels="' + lv.n + '">Alle Reifegrade im Detail</button></div>' +
+          (t ? '<div class="gnote twin">Aus dem Digital Twin: heute ' + t.fmt(t.cur(base)) + ', Zielwert ' + t.fmt(t.target) + '.</div>' : '') + '</div>';
+      }
       return '<div class="goal' + (it.on ? '' : ' off') + '"><div class="gh"><b>' + g.name + '</b><label class="switch"><input type="checkbox" data-goal-on="' + g.id + '"' + (it.on ? ' checked' : '') + '><span></span></label></div>' +
         '<div class="gv"><span>' + g.note + '</span><span><input type="number" data-goal-v="' + g.id + '" value="' + it.v + '" min="' + g.min + '" max="' + g.max + '" step="' + g.step + '"> ' + g.unit + '</span></div>' +
         (t ? '<div class="gnote twin">Aus dem Digital Twin: heute ' + t.fmt(t.cur(base)) + ', Zielwert ' + t.fmt(t.target) + '.</div>' : '') + '</div>';
@@ -1525,6 +1532,8 @@
       }
       const gt = t.closest('[data-gate]'); if (gt) { if (gt.dataset.gate === 'calib') { showScreen('istbild'); } else { const Q = state.twinQuality || twinQuality(); state.twinAck = Q.stamp; store.set('zt.twinAck', Q.stamp); state.simResult = null; if (state.screen === 'roadmap') renderRoadmapCase(); else renderSimulate(); toast('Fortgesetzt trotz nicht belastbarem Zwilling. Der Vorbehalt steht im Urteil und in der Zusammenfassung.'); } return; }
       const ln = t.closest('[data-lanes]'); if (ln) { state.goals.lanes = parseInt(ln.dataset.lanes, 10); saveGoals(); state.simResult = null; renderGoals(); return; }
+      const gl = t.closest('[data-goal-level]'); if (gl) { state.goals.items.level.v = parseInt(gl.dataset.goalLevel, 10); state.goals.touched = true; saveGoals(); state.simResult = null; renderGoals(); return; }
+      const gls = t.closest('[data-goal-levels]'); if (gls) { state.levelView = parseInt(gls.dataset.goalLevels, 10); showView('levels'); return; }
       const cs = t.closest('[data-capshare]'); if (cs) { state.goals.cap.share = parseFloat(cs.dataset.capshare); saveGoals(); state.simResult = null; renderGoals(); return; }
       const cp = t.closest('[data-cappartners]'); if (cp) { state.goals.cap.partners = parseInt(cp.dataset.cappartners, 10); saveGoals(); state.simResult = null; renderGoals(); return; }
       const hz = t.closest('[data-horizon]'); if (hz) { state.goals.horizon = parseInt(hz.dataset.horizon, 10); state.goals.touched = true; saveGoals(); state.simResult = null; renderGoals(); return; }
