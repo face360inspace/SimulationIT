@@ -21,6 +21,7 @@
   <div class="hud dim" id="hud">
     <div class="hud-top">
       <div class="clock"><span id="clock">07:00</span><small id="clockState">läuft</small></div>
+      <span class="mode-chip" id="modeChip" hidden>Digital Twin · Validierungslauf</span>
       <div class="dayline" id="dayline" aria-hidden="true"></div>
       <div class="controls">
         <button type="button" class="btn primary" id="playBtn" title="Pause oder Weiter (Leertaste)">Pause</button>
@@ -60,7 +61,8 @@
       <h2>Wie viel Zero Touch kauft Ihr Budget?</h2>
       <p>Die Simulation beginnt beim tatsächlichen Zustand eines Unternehmens: ServiceNow-Daten, Architekturunterlagen und das Wissen der Delivery-Teams ergeben ein Ist-Bild je Handlungsfeld. Darauf verteilen Sie ein Budget, lassen einen Arbeitstag mit elf typischen Ereignissen in der 3D-Szene ablaufen und erhalten eine Prognose mit Quick Wins und einem individuellen Transformationspfad: welche Investition, welche Wirkung, welche Dauer.</p>
       <ol class="howto">
-        <li><b>Ist-Aufnahme.</b> ServiceNow-Export oder Direktverbindung, Dokumentation, Kurzinterview. Daraus entsteht automatisch der Reifegrad je Handlungsfeld mit Begründung.</li>
+        <li><b>Ist-Aufnahme.</b> ServiceNow-Export oder Direktverbindung, weitere Systeme, Dokumentation, Kurzinterview, Agenten des Kunden.</li>
+        <li><b>Digital Twin.</b> Reifegrad je Handlungsfeld mit Begründung, Validierungslauf eines erzeugten Arbeitstages und Realitätscheck gegen die gemessenen Kennzahlen.</li>
         <li><b>Planen.</b> Stufen in den Handlungsfeldern kaufen. Manche Stufen setzen andere voraus.</li>
         <li><b>Arbeitstag.</b> Techniker laufen zu Störungen, Automatisierung erscheint als Lichtsäule, der KI-Agent als Drohne. Rote Bildschirme zeigen blockierte Mitarbeiter.</li>
         <li><b>Auswertung.</b> Kennzahlen im Vergleich, Wirkung je Ereignis.</li>
@@ -176,7 +178,7 @@
       </section>
 
       <div class="actions plan-actions">
-        <button type="button" class="btn primary big" id="intakeNextBtn">Ist-Bild analysieren</button>
+        <button type="button" class="btn primary big" id="intakeNextBtn">Digital Twin erzeugen</button>
         <span class="note" id="intakeReady"></span>
         <button type="button" class="btn ghost" id="intakeSkipBtn" style="margin-inline-start:auto">Ohne Kundendaten planen</button>
       </div>
@@ -187,15 +189,15 @@
   <section class="overlay" id="screen-istbild" hidden>
     <div class="overlay-card istbild">
       <div class="reveal-run" id="revealRun">
-        <div class="eyebrow">Schritt 1 · Ist-Aufnahme</div>
-        <h2>Ist-Bild wird abgeleitet</h2>
+        <div class="eyebrow">Schritt 2 · Digital Twin</div>
+        <h2>Digital Twin wird aufgebaut</h2>
         <ol class="reveal-steps" id="revealSteps"></ol>
       </div>
       <div class="reveal-result" id="revealResult" hidden>
         <div class="plan-head">
           <div>
-            <div class="eyebrow">Schritt 1 · Ist-Aufnahme · Ergebnis</div>
-            <h2 id="istbildTitle">Ist-Bild</h2>
+            <div class="eyebrow">Schritt 2 · Digital Twin</div>
+            <h2 id="istbildTitle">Digital Twin</h2>
             <p class="muted" id="istbildIntro"></p>
           </div>
           <div class="budget-box">
@@ -212,12 +214,24 @@
           <div class="ana-sec-head"><span class="ana-num">2</span><div><h3 id="inResH">Reifegrad je Handlungsfeld</h3><p class="note">Die Stufe, die Daten, Dokumentation und Interview zusammen nahelegen, mit Sicherheit und Begründung. Die Stufe lässt sich überschreiben.</p></div></div>
           <div class="cands" id="proposalCards"></div>
         </section>
+        <section class="ana-sec" aria-labelledby="twRunH">
+          <div class="ana-sec-head"><span class="ana-num">3</span><div><h3 id="twRunH">Zwilling im Betrieb</h3><p class="note">Der Zwilling erzeugt aus Reifegrad und Häufigkeiten Arbeitstage: Welche Ereignisse treten auf, wer greift ein, wie lange dauert es. Ein Validierungslauf zeigt einen zufällig erzeugten Tag in der Szene; danach steht hier der Vergleich mit einem gemessenen Durchschnittstag.</p></div></div>
+          <div class="tiles five" id="twinModel"></div>
+          <div class="actions"><button type="button" class="btn primary" id="twinRunBtn">Zwilling ablaufen lassen</button><span class="note" id="twinRunNote"></span></div>
+          <div id="twinLastRun"></div>
+        </section>
+        <section class="ana-sec" aria-labelledby="twCheckH">
+          <div class="ana-sec-head"><span class="ana-num">4</span><div><h3 id="twCheckH">Realitätscheck</h3><p class="note">Erwartungswerte des Zwillings je Monat gegen die gemessenen Kennzahlen. Abweichungen unter 20 % gelten als realitätsnah, bis 50 % als prüfenswert, darüber als Kalibrierungsbedarf. Die Hinweise nennen, welche Stellschraube die Abweichung erklärt.</p></div></div>
+          <div class="matrix-wrap"><table class="sn-table" id="realityTable"></table></div>
+          <details class="dep-details" style="margin-top:10px"><summary>Häufigkeit je Ereignistyp: gemessen und im Zwilling</summary><div class="matrix-wrap" style="margin-top:10px"><table class="sn-table" id="realityTypes"></table></div></details>
+        </section>
         <section class="ana-sec" aria-labelledby="inQwH">
-          <div class="ana-sec-head"><span class="ana-num">3</span><div><h3 id="inQwH">Quick Wins aus den Daten</h3><p class="note">Maßnahmen, die das Ticketaufkommen direkt adressieren und sich schnell umsetzen lassen.</p></div></div>
+          <div class="ana-sec-head"><span class="ana-num">5</span><div><h3 id="inQwH">Quick Wins aus den Daten</h3><p class="note">Maßnahmen, die das Ticketaufkommen direkt adressieren und sich schnell umsetzen lassen.</p></div></div>
           <ul class="pv-list" id="quickWinList"></ul>
         </section>
         <div class="actions plan-actions">
           <button type="button" class="btn primary big" id="applyIntakeBtn">Als Ausgangslage übernehmen und weiter: Planen</button>
+          <button type="button" class="btn" id="twinRunBtn2">Zwilling ablaufen lassen</button>
           <button type="button" class="btn" id="istbildBackBtn">Zurück zur Ist-Aufnahme</button>
           <button type="button" class="btn ghost" id="profileCopyBtn2">Profil kopieren</button>
           <span class="note" id="applyStatus"></span>
@@ -231,7 +245,7 @@
     <div class="overlay-card plan">
       <div class="plan-head">
         <div>
-          <div class="eyebrow">Schritt 2 · Planen</div>
+          <div class="eyebrow">Schritt 3 · Planen</div>
           <h2>Budget auf Handlungsfelder verteilen</h2>
           <p class="muted">Klicken Sie auf die Stufe, die Sie erreichen wollen. Stufe 4 braucht End-to-End-Telemetrie, Stufe 5 zusätzlich AIOps und Auto-Remediation. Die Organisation begrenzt alles: Ereignisse laufen höchstens eine Stufe über der Organisation.</p>
         </div>
@@ -298,7 +312,7 @@
     <div class="overlay-card analysis">
       <div class="plan-head">
         <div>
-          <div class="eyebrow">Schritt 5 · Prognose und Roadmap</div>
+          <div class="eyebrow">Schritt 6 · Prognose und Roadmap</div>
           <h2>Was bringt welche Maßnahme?</h2>
           <p class="muted">Die Prognose geht von Ihrer Planung aus und rechnet sie auf Jahre hoch. Eine Maßnahme hebt genau ein Handlungsfeld um eine Stufe. Für jede mögliche Maßnahme sehen Sie, was sie kostet, was sie spart und wovon sie abhängt. Am Ende steht ein Roadmap-Vorschlag.</p>
         </div>
@@ -382,10 +396,11 @@
     <button type="button" class="brand" data-home title="Zum Start"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14l5-5 4 4 7-7"/><path d="M15 6h5v5"/></svg></span><span class="brand-text"><h1>Zero-Touch IT Simulator</h1></span></button>
     <ol class="stepper" id="steps" aria-label="Ablauf der Simulation">
       <li><button type="button" data-step="intake"><span class="n">1</span><span class="lbl">Ist-Aufnahme</span></button></li>
-      <li><button type="button" data-step="plan"><span class="n">2</span><span class="lbl">Planen</span></button></li>
-      <li><button type="button" data-step="run"><span class="n">3</span><span class="lbl">Arbeitstag</span></button></li>
-      <li><button type="button" data-step="result"><span class="n">4</span><span class="lbl">Auswertung</span></button></li>
-      <li><button type="button" data-step="analysis"><span class="n">5</span><span class="lbl">Prognose</span></button></li>
+      <li><button type="button" data-step="istbild"><span class="n">2</span><span class="lbl">Digital Twin</span></button></li>
+      <li><button type="button" data-step="plan"><span class="n">3</span><span class="lbl">Planen</span></button></li>
+      <li><button type="button" data-step="run"><span class="n">4</span><span class="lbl">Arbeitstag</span></button></li>
+      <li><button type="button" data-step="result"><span class="n">5</span><span class="lbl">Auswertung</span></button></li>
+      <li><button type="button" data-step="analysis"><span class="n">6</span><span class="lbl">Prognose</span></button></li>
     </ol>
     <nav class="nav" aria-label="Wissen">
       <button type="button" data-view="levels">Reifegrade</button>

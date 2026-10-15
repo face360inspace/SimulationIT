@@ -715,3 +715,10 @@ code { font-family: var(--font-mono); font-size: .78em; background: var(--surfac
 .q .agent-note { font-size: .74rem; color: var(--accent-ink); background: var(--accent-soft); border-radius: var(--radius-s); padding: 5px 8px; }
 .q .agent-note b { font-weight: 600; }
 .params-grid select { font: inherit; font-size: .86rem; padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--surface); color: var(--fg); width: 100%; }
+
+.mode-chip { font-size: .72rem; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding: 5px 10px; border-radius: 999px; background: var(--agent-soft); color: var(--agent-ink); white-space: nowrap; }
+.mode-chip[hidden] { display: none; }
+.sn-table td.ok { color: var(--agent-ink); font-weight: 600; } .sn-table td.warn { color: var(--warn); font-weight: 600; } .sn-table td.bad { color: var(--crit); font-weight: 600; }
+.sn-table td.hint { text-align: left; color: var(--fg-2); font-size: .76rem; max-width: 340px; }
+.twin-run { margin-top: 12px; background: var(--surface-2); border-radius: var(--radius); padding: 12px 14px; }
+.twin-run h4 { margin: 0 0 8px; font-family: var(--font-display); font-size: .92rem; }

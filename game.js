@@ -263,8 +263,9 @@ window.Scene3D = (function () {
   }
 
   /* ---------- Marker & Effekte ---------- */
+  const baseOf = id => String(id).split('#')[0];
   function setMarker(id, kind) {
-    const tgt = eventTargets[id]; if (!tgt) return;
+    const tgt = eventTargets[baseOf(id)]; if (!tgt) return;
     let m = markers.get(id);
     if (!m) { m = { sprite: null, kind: null, life: Infinity, base: tgt.pos.clone() }; markers.set(id, m); }
     if (m.sprite) scene.remove(m.sprite);
@@ -291,7 +292,7 @@ window.Scene3D = (function () {
   /* ---------- Techniker ---------- */
   function dispatchTech(eventId) {
     if (techs.some(t => t.eventId === eventId)) return;
-    const tgt = eventTargets[eventId]; if (!tgt) return;
+    const tgt = eventTargets[baseOf(eventId)]; if (!tgt) return;
     const free = techs.find(t => t.state === 'idle');
     if (!free) { if (!waiting.includes(eventId)) waiting.push(eventId); return; }
     free.state = 'walking'; free.eventId = eventId;
@@ -428,7 +429,7 @@ window.Scene3D = (function () {
   S.setRunning = function (on) { running = on; if (on) { clock.getDelta(); resize(); } };
   S.setTime = function (min) { simMin = min; updateDaylight(); };
   S.setFollow = function (on) { follow = on; if (!on) focus = null; };
-  S.focusEvent = function (id, seconds) { const t = eventTargets[id]; if (!t) return; focus = t.pos.clone().setY(1); focusTimer = seconds || 6; cam.idle = 0; };
+  S.focusEvent = function (id, seconds) { const t = eventTargets[baseOf(id)]; if (!t) return; focus = t.pos.clone().setY(1); focusTimer = seconds || 6; cam.idle = 0; };
   S.reset = function () {
     markers.forEach(m => { if (m.sprite) scene.remove(m.sprite); }); markers.clear();
     beams.forEach(b => { scene.remove(b.mesh); scene.remove(b.ring); }); beams.length = 0;
@@ -444,28 +445,28 @@ window.Scene3D = (function () {
   S.setOt = function (on) { if (hall) hall.visible = !!on; cam.radiusWanted = on ? 54 : 46; };
   S.eventStart = function (id, blocked) {
     setMarker(id, blocked ? 'alert' : 'work');
-    const t = eventTargets[id]; if (blocked && t) { setDesksBlocked(t.desks, true); setMachinesBlocked(t.machines, true); }
+    const t = eventTargets[baseOf(id)]; if (blocked && t) { setDesksBlocked(t.desks, true); setMachinesBlocked(t.machines, true); }
     if (follow) S.focusEvent(id, 5);
   };
   S.eventStep = function (id, actor, blocked) {
-    const t = eventTargets[id]; if (!t) return;
+    const t = eventTargets[baseOf(id)]; if (!t) return;
     if (actor === 'sd' || actor === 'tech') { dispatchTech(id); setMarker(id, blocked ? 'alert' : 'work'); }
     else if (actor === 'sys') { beam(t.floor, COL.auto); if (!markers.get(id) || markers.get(id).kind !== 'alert') setMarker(id, 'work'); }
     else if (actor === 'ai') { droneTarget = t.pos.clone().add(new THREE.Vector3(0, 1.6, 0)); droneTimer = 3.5; }
     else if (actor === 'mgr') { bubble(serviceDeskPos.clone().setY(2.4), 'approve', 3); }
     else if (actor === 'ma') { bubble(t.pos.clone().add(new THREE.Vector3(.9, .6, 0)), 'user', 2.5); }
-    if (id === 'onboarding' && actor === 'ma' && jonasFigure && jonasFigure.visible) jonasFigure.userData.walk = desks[7].pos.clone().add(new THREE.Vector3(0, 0, 1.4));
+    if (baseOf(id) === 'onboarding' && actor === 'ma' && jonasFigure && jonasFigure.visible) jonasFigure.userData.walk = desks[7].pos.clone().add(new THREE.Vector3(0, 0, 1.4));
   };
   S.eventFinish = function (id, outcome) {
-    const t = eventTargets[id]; if (!t) return;
+    const t = eventTargets[baseOf(id)]; if (!t) return;
     setMarker(id, outcome === 'prevented' ? 'prevented' : 'done');
     setDesksBlocked(t.desks, false); setMachinesBlocked(t.machines, false);
     releaseTech(id);
-    if (id === 'onboarding' && jonasFigure && jonasFigure.visible && !jonasFigure.userData.walk) jonasFigure.userData.walk = desks[7].pos.clone().add(new THREE.Vector3(0, 0, 1.4));
-    if (id === 'offboarding' && claudiaDesk) { claudiaDesk.person.visible = false; claudiaDesk.occupied = false; claudiaDesk.screen.emissive.setHex(COL.screenOff); }
+    if (baseOf(id) === 'onboarding' && jonasFigure && jonasFigure.visible && !jonasFigure.userData.walk) jonasFigure.userData.walk = desks[7].pos.clone().add(new THREE.Vector3(0, 0, 1.4));
+    if (baseOf(id) === 'offboarding' && claudiaDesk) { claudiaDesk.person.visible = false; claudiaDesk.occupied = false; claudiaDesk.screen.emissive.setHex(COL.screenOff); }
   };
   S.setBlocked = function (id, blocked) {
-    const t = eventTargets[id]; if (!t) return;
+    const t = eventTargets[baseOf(id)]; if (!t) return;
     setDesksBlocked(t.desks, blocked); setMachinesBlocked(t.machines, blocked);
     const m = markers.get(id);
     if (m && m.life === Infinity) { const want = blocked ? 'alert' : 'work'; if (m.kind !== want) setMarker(id, want); }

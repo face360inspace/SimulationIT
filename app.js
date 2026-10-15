@@ -11,8 +11,8 @@
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
   const MS_PER_MIN = 170;   // Echtzeit je simulierter Minute bei 1×
-  const ROUTES = { start: 'start', intake: 'ist-aufnahme', istbild: 'ist-bild', plan: 'planen', run: 'arbeitstag', result: 'auswertung', analysis: 'prognose', levels: 'reifegrade', path: 'standort' };
-  const STEP_NAMES = { intake: 'Ist-Aufnahme', plan: 'Planung', run: 'Arbeitstag', result: 'Auswertung', analysis: 'Prognose' };
+  const ROUTES = { start: 'start', intake: 'ist-aufnahme', istbild: 'digital-twin', plan: 'planen', run: 'arbeitstag', result: 'auswertung', analysis: 'prognose', levels: 'reifegrade', path: 'standort' };
+  const STEP_NAMES = { intake: 'Ist-Aufnahme', istbild: 'Digital Twin', plan: 'Planung', run: 'Arbeitstag', result: 'Auswertung', analysis: 'Prognose' };
 
   const STORAGE_VERSION = 2;   // Erhöhen setzt den gespeicherten Zustand aller Nutzer beim nächsten Laden zurück
   const store = {
@@ -26,7 +26,7 @@
 
   const allOne = () => { const o = {}; FIELDS.forEach(f => { o[f.id] = 1; }); return o; };
   const state = {
-    view: 'sim', screen: 'start', returnScreen: 'start', evaluated: false, ot: store.get('zt.ot', false),
+    view: 'sim', screen: 'start', returnScreen: 'start', evaluated: false, ot: store.get('zt.ot', false), twinRun: false, twinLast: null,
     budgetIdx: store.get('zt.budget', 1),
     useAssessment: store.get('zt.useAssessment', false),
     base: allOne(), levels: allOne(),
@@ -126,16 +126,16 @@
     if (replace) history.replaceState(null, '', hash); else history.pushState(null, '', hash);
   }
   function updateStepper() {
-    const active = state.view === 'sim' ? (state.screen === 'istbild' ? 'intake' : state.screen) : null;
+    const active = state.view === 'sim' ? (state.screen === 'run' && state.twinRun ? 'istbild' : state.screen) : null;
     $$('#steps [data-step]').forEach(b => {
       const s = b.dataset.step;
       if (s === active) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
       b.disabled = (s === 'result' && !state.evaluated) || (s === 'run' && state.screen === 'run' && !state.ended && state.view === 'sim');
-      b.classList.toggle('done', (s === 'intake' && state.intake.applied) || (s === 'plan' && ['run', 'result', 'analysis'].indexOf(state.screen) >= 0) || (s === 'run' && state.evaluated) || (s === 'result' && state.evaluated && state.screen === 'analysis'));
+      b.classList.toggle('done', (s === 'intake' && intakeHasData()) || (s === 'istbild' && state.intake.applied) || (s === 'plan' && ['run', 'result', 'analysis'].indexOf(state.screen) >= 0) || (s === 'run' && state.evaluated) || (s === 'result' && state.evaluated && state.screen === 'analysis'));
     });
     const back = $('#backBtn');
     if (state.view !== 'sim') {
-      const lbl = { start: 'Zum Start', intake: 'Zurück zur Ist-Aufnahme', istbild: 'Zurück zum Ist-Bild', plan: 'Zurück zur Planung', run: state.ended ? 'Zurück zur Auswertung' : 'Zurück zum Arbeitstag', result: 'Zurück zur Auswertung', analysis: 'Zurück zur Prognose' }[state.returnScreen] || 'Zur Simulation';
+      const lbl = { start: 'Zum Start', intake: 'Zurück zur Ist-Aufnahme', istbild: 'Zurück zum Digital Twin', plan: 'Zurück zur Planung', run: state.ended ? 'Zurück zur Auswertung' : 'Zurück zum Arbeitstag', result: 'Zurück zur Auswertung', analysis: 'Zurück zur Prognose' }[state.returnScreen] || 'Zur Simulation';
       back.textContent = lbl; back.hidden = false;
     } else back.hidden = true;
   }
@@ -242,32 +242,48 @@
 
   /* ---------- Simulationstag ---------- */
   function seededRandom(seed) { let x = seed >>> 0; return () => { x = (x + 0x6D2B79F5) >>> 0; let t = x; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
-  function buildDay() {
+  function poissonSample(lambda, rand) { const L = Math.exp(-lambda); let k = 0, p = 1; do { k++; p *= rand(); } while (p > L); return k - 1; }
+  function buildDay(levelsOverride, twin) {
     const rand = seededRandom(1000 + state.runCount * 7919);
-    const items = EVENTS.filter(() => !state.vary || rand() < 0.75).map(def => {
-      const eff = effectiveLevel(def, state.levels);
+    const levels = levelsOverride || state.levels;
+    let defs;
+    if (twin) {
+      // Der Zwilling erzeugt den Tag aus den kalibrierten Häufigkeiten: Vorkommen je Tag ~ Poisson
+      defs = [];
+      EVENTS.forEach(def => {
+        const perMonth = def.freq * (def.perCompany ? 1 : state.params.employees / 100);
+        const n = Math.min(3, poissonSample(perMonth / 20, rand));
+        for (let i = 0; i < n; i++) defs.push({ def, key: def.id + (i ? '#' + i : '') });
+      });
+      if (!defs.length) { const def = EVENTS[Math.floor(rand() * EVENTS.length)]; defs.push({ def, key: def.id }); }
+    } else defs = EVENTS.filter(() => !state.vary || rand() < 0.75).map(def => ({ def, key: def.id }));
+    const items = defs.map(x => {
+      const def = x.def;
+      const eff = effectiveLevel(def, levels);
       let v = def.v[eff.level - 1];
       let start = (def.startByLevel && def.startByLevel[eff.level]) || def.start;
-      if (state.vary) {
+      if (state.vary || twin) {
         const f = 1 - state.params.spread + rand() * 2 * state.params.spread;
-        v = Object.assign({}, v, { it: Math.round(v.it * f), user: Math.round(v.user * f) });
-        start = Math.max(DAY_START + 15, Math.min(DAY_END - 90, Math.round(start + (rand() - .5) * 120)));
+        v = Object.assign({}, v, { it: Math.round(v.it * f), user: Math.round(v.user * f), ot: Math.round((v.ot || 0) * f) });
+        start = twin ? Math.round(DAY_START + 15 + rand() * (DAY_END - DAY_START - 120)) : Math.max(DAY_START + 15, Math.min(DAY_END - 90, Math.round(start + (rand() - .5) * 120)));
       }
       let acc = start;
       const steps = v.steps.map(s => { const at = acc; acc += s.d; return Object.assign({}, s, { at }); });
-      return { def, v, level: eff.level, limiters: eff.limiters, start, steps, endAt: acc, shown: 0, started: false, finished: false, el: null, blocked: false };
+      return { def, key: x.key, v, level: eff.level, limiters: eff.limiters, start, steps, endAt: acc, shown: 0, started: false, finished: false, el: null, blocked: false };
     });
     items.sort((a, b) => a.start - b.start);
     return items;
   }
 
-  function startRun() {
+  function startRun(opts) {
     state.runCount++;
-    state.day = buildDay();
+    state.twinRun = !!(opts && opts.twin);
+    state.day = buildDay(opts && opts.levels, state.twinRun);
     state.sim = DAY_START; state.ended = false; state.playing = true;
     $('#feed').innerHTML = '';
+    $('#modeChip').hidden = !state.twinRun;
     window.Scene3D.reset();
-    renderDayline(); renderFieldSummary();
+    renderDayline(); renderFieldSummary(opts && opts.levels);
     showScreen('run');
     update();
   }
@@ -281,18 +297,18 @@
         inst.started = true;
         feed.prepend(createCard(inst));
         inst.blocked = isBlocked(inst);
-        window.Scene3D.eventStart(inst.def.id, inst.blocked);
+        window.Scene3D.eventStart(inst.key || inst.def.id, inst.blocked);
       }
       if (!inst.started) return;
       while (inst.shown < inst.steps.length && inst.steps[inst.shown].at <= state.sim) {
         const st = inst.steps[inst.shown];
         appendStep(inst, st); inst.shown++;
-        window.Scene3D.eventStep(inst.def.id, st.a, inst.blocked);
+        window.Scene3D.eventStep(inst.key || inst.def.id, st.a, inst.blocked);
       }
       if (inst.shown === inst.steps.length) {
         if (!inst.finished) {
           inst.finished = true; finishCard(inst);
-          window.Scene3D.eventFinish(inst.def.id, inst.v.prevented ? 'prevented' : 'done');
+          window.Scene3D.eventFinish(inst.key || inst.def.id, inst.v.prevented ? 'prevented' : 'done');
         }
       } else {
         ensurePending(inst);
@@ -309,6 +325,12 @@
   function onDayEnd() {
     if (endHandled) return; endHandled = true;
     window.Scene3D.setDayEnd();
+    if (state.twinRun) {
+      const t = dayTotals(state.day);
+      state.twinLast = { events: t.events.length, tickets: t.tickets, it: t.it, user: t.user, ot: t.ot, prevented: t.prevented + t.auto, open: state.day.filter(i => !i.finished).length, at: new Date().toISOString(), titles: state.day.map(i => fmtTime(i.start) + ' ' + i.v.title) };
+      setTimeout(() => { if (state.screen === 'run') { state.twinRun = false; $('#modeChip').hidden = true; showScreen('istbild'); const el = $('#twRunH'); if (el) el.scrollIntoView({ block: 'start' }); } }, 1400);
+      return;
+    }
     setTimeout(() => { if (state.screen === 'run') showResult(); }, 1400);
   }
 
@@ -337,7 +359,7 @@
       '<div class="card-foot"><span class="m">IT <b>' + fmtHours(inst.v.it) + '</b></span><span class="m">Ausfall <b>' + fmtHours(inst.v.user) + '</b></span>' + (inst.v.ot ? '<span class="m">Stillstand <b>' + fmtHours(inst.v.ot) + '</b></span>' : '') + '<span class="m">Eingriffe <b>' + inst.v.touches + '</b></span>' +
       (inst.v.risk ? '<span class="risk">' + esc(inst.v.risk) + '</span>' : '') + '</div>';
     inst.el = card; inst.stepsEl = $('.steps', card); inst.statusEl = $('.status', card);
-    card.addEventListener('click', () => window.Scene3D.focusEvent(inst.def.id, 6));
+    card.addEventListener('click', () => window.Scene3D.focusEvent(inst.key || inst.def.id, 6));
     return card;
   }
   function appendStep(inst, step) {
@@ -395,8 +417,9 @@
     $('#xla').textContent = xi; $('#xlaBar').style.width = xi + '%';
     $('#xlaBar').style.background = xi >= 80 ? 'var(--agent)' : (xi >= 50 ? 'var(--accent)' : 'var(--human)');
   }
-  function renderFieldSummary() {
-    $('#fieldSummary').innerHTML = FIELDS.map(f => '<div class="fs-row"><span class="nm">' + f.name + '</span><span class="seg">' + [1, 2, 3, 4, 5].map(n => '<i class="' + (n <= state.levels[f.id] ? 'on' : '') + '"></i>').join('') + '</span></div>').join('');
+  function renderFieldSummary(levelsOverride) {
+    const L = levelsOverride || state.levels;
+    $('#fieldSummary').innerHTML = FIELDS.map(f => '<div class="fs-row"><span class="nm">' + f.name + '</span><span class="seg">' + [1, 2, 3, 4, 5].map(n => '<i class="' + (n <= L[f.id] ? 'on' : '') + '"></i>').join('') + '</span></div>').join('');
   }
 
   /* ---------- Auswertung ---------- */
@@ -697,7 +720,7 @@
     store.clearAll(); if (theme) store.set('zt.theme', theme); store.set('zt.version', STORAGE_VERSION);
     state.budgetIdx = 1; state.useAssessment = false; state.base = allOne(); state.levels = allOne();
     state.speed = 1; $$('#speed button').forEach(b => b.setAttribute('aria-pressed', b.dataset.s === '1'));
-    state.playing = false; state.ended = false; state.day = null; state.runs = []; state.evaluated = false; state.runCount = 0;
+    state.playing = false; state.ended = false; state.day = null; state.runs = []; state.evaluated = false; state.runCount = 0; state.twinRun = false; state.twinLast = null; $('#modeChip').hidden = true;
     state.follow = true; $('#followBtn').checked = true; window.Scene3D.setFollow(true);
     state.vary = false; $('#varyBtn').checked = false;
     setOt(false, true);
@@ -885,16 +908,56 @@
     $('#dataGrid').innerHTML = items.length ? items.map(i => '<div class="data-item"><b>' + esc(i.name) + '</b><span>' + esc(i.sum) + '</span>' + (i.note ? '<small>' + esc(i.note) + '</small>' : '') + '</div>').join('') : '<div class="data-item"><span>Keine Quellen geladen.</span></div>';
     $('#quickWinList').innerHTML = qw.length ? qw.map(w => '<li><span class="lv-badge l' + w.stage + '">' + w.stage + '</span><span class="pv-body"><span class="pv-title">' + esc(w.title) + '<span class="qw-badge">Aufwand ' + w.effort + '</span></span><span class="pv-sub">' + esc(w.why) + ' Handlungsfeld: ' + fieldName(w.field) + ', Stufe ' + w.stage + '.</span></span></li>').join('') : '<li><span class="pv-body"><span class="pv-sub">Quick Wins erscheinen, sobald Ticketdaten vorliegen.</span></span></li>';
     $('#applyStatus').textContent = it.applied ? 'Bereits übernommen. Änderungen werden mit erneutem Übernehmen wirksam.' : '';
+    renderTwin();
     const avg = FIELDS.reduce((s, f) => s + levels[f.id], 0) / FIELDS.length;
     const mn = Math.min.apply(null, FIELDS.map(f => levels[f.id]));
     const weakest = FIELDS.filter(f => levels[f.id] === mn).map(f => f.name);
-    $('#istbildTitle').textContent = 'Ist-Bild' + (it.customer ? ' von ' + it.customer : '');
+    $('#istbildTitle').textContent = 'Digital Twin' + (it.customer ? ' von ' + it.customer : '');
     const src = []; if (it.metrics && it.metrics.tickets) src.push(it.metrics.tickets + ' Tickets aus ' + it.metrics.months.toFixed(1) + ' Monaten'); if (tl) src.push(tl + ' erkannte Werkzeuge'); if (qs) src.push(qs + ' Interviewantworten'); const exn = Object.keys(it.extra || {}).length; if (exn) src.push(exn + ' weiteren Systemen');
     $('#istbildIntro').textContent = (src.length ? 'Abgeleitet aus ' + src.join(', ') + '. ' : 'Ohne Quellen wird Stufe 1 angenommen. ') + 'Die Reife wird durch das schwächste Feld begrenzt: ' + weakest.join(', ') + ' auf Stufe ' + mn + '.';
     const exp = ['survey', 'dex'].map(k => it.extra && it.extra[k] && it.extra[k].experience).find(v => v !== null && v !== undefined);
     $('#istbildHero').innerHTML = fmtNum(avg, 1) + '<small>von 5' + (exp !== undefined ? ' · Experience gemessen ' + Math.round(exp) + ' von 100' : '') + '</small>';
     $('#istbildBars').innerHTML = FIELDS.map(f => '<div class="fieldbar' + (levels[f.id] === mn && weakest.length < FIELDS.length ? ' bottleneck' : '') + '"><div class="nm">' + f.name + '</div><div class="seg">' + [1, 2, 3, 4, 5].map(n => '<i class="' + (n <= levels[f.id] ? 'on' : '') + '"></i>').join('') + '</div><div class="v">' + levels[f.id] + '</div></div>').join('');
     renderSrcStatus();
+  }
+  function twinLevels() { const p = intakeProposal(); const L = {}; FIELDS.forEach(f => { L[f.id] = p[f.id].final; }); return L; }
+  function startTwinRun() { endHandled = false; startRun({ twin: true, levels: twinLevels() }); toast('Validierungslauf: ein aus den Häufigkeiten erzeugter Arbeitstag auf dem Ist-Bild.'); }
+  function renderTwin() {
+    const it = state.intake, L = twinLevels(), A = window.Analysis;
+    const P = Object.assign({}, state.params, { employees: it.employees || state.params.employees });
+    const cal = window.Intake.calibrate(it.metrics, it.employees);
+    // Häufigkeiten des Zwillings: kalibriert, wenn Daten vorliegen, sonst Standard
+    const freqOf = e => { if (cal && cal.freq[e.id] !== null && cal.freq[e.id] !== undefined) return cal.freq[e.id]; const ex = []; Object.keys(it.extra || {}).forEach(k => { const r = it.extra[k]; if (r && r.calib && r.calib[e.id] !== undefined && r.calib[e.id] !== null) ex.push(r.calib[e.id]); }); return ex.length ? ex.reduce((s, v) => s + v, 0) / ex.length : e.freq; };
+    const twinP = Object.assign({}, P, { coverage: cal ? cal.coverage : P.coverage });
+    const saved = EVENTS.map(e => e.freq); EVENTS.forEach(e => { e.freq = freqOf(e); });
+    const exp = A.expected(L, twinP);
+    const vs = A.variants(L);
+    let durW = 0, nW = 0, autoN = 0, prevN = 0; vs.forEach(x => { const n = A.perYear(x.e, twinP); const dur = x.v.steps.reduce((s, st) => s + st.d, 0) / 60; durW += dur * n; nW += n; if (x.v.touches === 0 || x.v.prevented) autoN += n; if (x.v.prevented) prevN += n; });
+    const perType = EVENTS.map(e => ({ e, twin: e.freq * (e.perCompany ? 1 : (it.employees || 300) / 100), measured: it.metrics && it.metrics.byType && it.metrics.byType[e.id] ? it.metrics.byType[e.id].perMonth : null, calibrated: !!(cal && cal.freq[e.id] !== null && cal.freq[e.id] !== undefined) }));
+    EVENTS.forEach((e, i) => { e.freq = saved[i]; });
+    const tile = (l, v, s) => '<div class="tile"><div class="lbl">' + l + '</div><div class="val">' + v + '</div>' + (s ? '<div class="rng">' + s + '</div>' : '') + '</div>';
+    $('#twinModel').innerHTML = tile('Handlungsfelder', FIELDS.length, 'Reife Ø ' + fmtNum(FIELDS.reduce((s, f) => s + L[f.id], 0) / FIELDS.length, 1)) + tile('Ereignistypen', EVENTS.length, perType.filter(p => p.calibrated).length + ' aus Daten kalibriert') + tile('Vorfälle und Anfragen je Monat', fmtNum(Math.round(exp.occurrences / 12)), 'davon Tickets ' + fmtNum(Math.round(exp.tickets / 12))) + tile('Ø Lösungszeit im Zwilling', fmtDur(nW ? durW / nW : null)) + tile('Ohne menschlichen Eingriff', pct(nW ? autoN / nW : 0), 'vorab erkannt ' + pct(nW ? prevN / nW : 0));
+    const m = it.metrics && it.metrics.tickets ? it.metrics : null;
+    const lr = state.twinLast;
+    $('#twinLastRun').innerHTML = lr ? '<div class="twin-run"><h4>Letzter Validierungslauf</h4><div class="tiles five">' + tile('Ereignisse am Tag', lr.events, m ? 'gemessen Ø ' + fmtNum(m.perMonth / 20, 1) + ' je Tag' : '') + tile('Tickets', lr.tickets, m ? 'gemessen Ø ' + fmtNum(m.perMonth / 20, 1) : '') + tile('IT-Aufwand', fmtHours(lr.it)) + tile('Ausfall Mitarbeiter', fmtHours(lr.user)) + (state.ot ? tile('Produktionsstillstand', fmtHours(lr.ot)) : tile('Verhindert / autonom', lr.prevented)) + '</div><p class="note" style="margin-top:8px">' + esc(lr.titles.join(' · ')) + (lr.open ? ' · ' + lr.open + ' über Nacht offen' : '') + '</p></div>' : '';
+    $('#twinRunNote').textContent = lr ? 'Jeder Lauf erzeugt einen anderen Tag.' : 'Noch kein Validierungslauf.';
+    // Realitätscheck
+    const rows = [];
+    const verdict = (tw, me, abs) => {
+      if (me === null || me === undefined || !isFinite(me)) return { d: null, cls: '', txt: 'keine Messung' };
+      if (abs) { const d = tw - me; const ad = Math.abs(d); return { d, cls: ad <= .05 ? 'ok' : ad <= .15 ? 'warn' : 'bad', txt: (d >= 0 ? '+' : '−') + Math.round(ad * 100) + ' Pkt.' }; }
+      if (me === 0) return { d: null, cls: '', txt: 'keine Messung' };
+      const d = (tw - me) / me; const ad = Math.abs(d); return { d, cls: ad <= .2 ? 'ok' : ad <= .5 ? 'warn' : 'bad', txt: (d > 0 ? '+' : '−') + Math.round(ad * 100) + ' %' };
+    };
+    const push = (label, me, tw, fmt, hintHi, hintLo, abs) => { const v = verdict(tw, me, abs); rows.push('<tr><td>' + label + '</td><td>' + (me === null || me === undefined ? '–' : fmt(me)) + '</td><td>' + fmt(tw) + '</td><td class="' + v.cls + '">' + v.txt + '</td><td class="hint">' + (v.d === null ? 'Quelle laden, um zu prüfen.' : v.cls === 'ok' ? 'Realitätsnah.' : (v.d > 0 ? hintHi : hintLo)) + '</td></tr>'); };
+    push('Vorfälle und Anfragen je Monat', m ? m.perMonth : null, exp.occurrences / 12, v => fmtNum(Math.round(v)), 'Zwilling erzeugt mehr Nachfrage als gemessen: Ereignisse aus anderen Quellen (Monitoring, OT, Agenten) kommen zu den Tickets hinzu; Häufigkeiten oder Abdeckung prüfen.', 'Zwilling erzeugt weniger Nachfrage als gemessen: Häufigkeiten nicht kalibrierter Typen prüfen, Abdeckung senken.');
+    push('Tickets je Monat', m ? m.perMonth : null, exp.tickets / 12, v => fmtNum(Math.round(v)), 'Zwilling erzeugt mehr Tickets: Stufen in Service Management und Automatisierung im Zwilling vermutlich zu niedrig.', 'Zwilling erzeugt weniger Tickets als gemessen: Stufen im Zwilling zu hoch, oder Anfragen laufen in der Realität ohne Self-Service über Tickets.');
+    push('Ø Lösungszeit', m ? m.mttrHours : null, nW ? durW / nW : 0, v => fmtDur(v), 'Zwilling löst langsamer als gemessen: Stufen zu niedrig angesetzt.', 'Zwilling löst schneller als gemessen: Reifegrad in Service Management oder Automatisierung zu hoch, oder Wartezeiten der Realität (Rückfragen, Warteschlangen, Schichten) sind im Zwilling nicht abgebildet.');
+    push('Ohne menschlichen Eingriff gelöst', m ? m.autoShare : null, nW ? autoN / nW : 0, v => pct(v), 'Zwilling automatisiert mehr als gemessen: Stufe Automatisierung im Zwilling prüfen.', 'Zwilling automatisiert weniger als gemessen: Automationen des Kunden sind in Ticketdaten sichtbar, aber im Zwilling nicht abgebildet.', true);
+    push('Vorab erkannt (aus Monitoring)', m ? m.monitoringShare : null, nW ? prevN / nW : 0, v => pct(v), 'Zwilling erkennt mehr vorab als gemessen: Stufe Telemetrie prüfen.', 'Zwilling erkennt weniger vorab als gemessen: Monitoring des Kunden im Zwilling unterschätzt.', true);
+    if (state.ot) { const oa = it.extra && it.extra.otalarms ? it.extra.otalarms.metrics.downtimeMinPerMonth : null; push('Produktionsstillstand je Monat', oa, exp.ot / 12, v => fmtHours(v), 'Zwilling erzeugt mehr Stillstand: Stufe OT oder Häufigkeiten prüfen.', 'Zwilling erzeugt weniger Stillstand als gemessen: Stillstandsdauern in den OT-Ereignissen zu kurz oder Stufe OT zu hoch.'); }
+    $('#realityTable').innerHTML = '<thead><tr><th>Kennzahl</th><th>Realität (gemessen)</th><th>Zwilling (Erwartung)</th><th>Abweichung</th><th style="text-align:left">Hinweis</th></tr></thead><tbody>' + rows.join('') + '</tbody>';
+    $('#realityTypes').innerHTML = '<thead><tr><th>Ereignistyp</th><th>gemessen je Monat</th><th>Zwilling je Monat</th><th>Abweichung</th><th style="text-align:left">Herkunft</th></tr></thead><tbody>' + perType.map(p => { const v = verdict(p.twin, p.measured); return '<tr><td>' + esc(p.e.title) + '</td><td>' + (p.measured === null ? '–' : fmtNum(p.measured, 1)) + '</td><td>' + fmtNum(p.twin, 1) + '</td><td class="' + v.cls + '">' + v.txt + '</td><td class="hint">' + (p.calibrated ? 'aus Ticketdaten kalibriert' : (p.measured === null ? 'Standardannahme, keine Messung' : 'Messwerte anderer Quellen')) + '</td></tr>'; }).join('') + '</tbody>';
   }
   function startIstbild() {
     const it = state.intake;
@@ -909,6 +972,7 @@
     const agn = Object.keys(it.agentAnswers || {}).length; if (agn) lines.push('Kunden-Agent befragt: ' + agn + ' Antworten mit Belegen aufgenommen');
     const ex = Object.keys(it.extra || {}); if (ex.length) lines.push(ex.length + ' weitere Systeme ausgewertet: ' + ex.slice(0, 4).map(k => window.Sources.SOURCES.find(s => s.id === k).name).join(', ') + (ex.length > 4 ? ' und ' + (ex.length - 4) + ' mehr' : ''));
     lines.push('Signale je Handlungsfeld zusammengeführt und Reifegrad abgeleitet');
+    lines.push('Digitalen Zwilling aufgebaut: ' + FIELDS.length + ' Handlungsfelder, ' + EVENTS.length + ' Ereignistypen, Häufigkeiten ' + (it.metrics && it.metrics.tickets ? 'aus Ticketdaten kalibriert' : 'als Standardannahme'));
     lines.push('Quick Wins aus dem Ticketaufkommen bestimmt');
     run.hidden = false; res.hidden = true;
     $('#revealSteps').innerHTML = lines.map(l => '<li><i></i><span>' + esc(l) + '</span></li>').join('');
@@ -1063,6 +1127,8 @@
     $('#applyIntakeBtn').addEventListener('click', () => { applyIntake(); showScreen('plan'); });
     $('#intakeNextBtn').addEventListener('click', startIstbild);
     $('#istbildBackBtn').addEventListener('click', () => showScreen('intake'));
+    $('#twinRunBtn').addEventListener('click', startTwinRun);
+    $('#twinRunBtn2').addEventListener('click', startTwinRun);
     $('#profileCopyBtn2').addEventListener('click', () => $('#profileCopyBtn').click());
     $('#intakeSkipBtn').addEventListener('click', () => { state.useAssessment = false; store.set('zt.useAssessment', false); applyBase(); showScreen('plan'); });
     $('#profileCopyBtn').addEventListener('click', () => { const txt = profileJSON(); const ok = () => toast('Profil in die Zwischenablage kopiert.'); if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok, () => toast('Kopieren nicht möglich.')); else toast('Kopieren nicht möglich.'); });
@@ -1126,7 +1192,7 @@
       const st = t.closest('[data-step]'); if (st && !st.disabled) {
         const s = st.dataset.step;
         if (state.view !== 'sim') showView('sim');
-        if (s === 'run') { if (state.screen === 'run' && !state.ended) return; if (state.screen === 'run' && state.ended) { showScreen('result'); return; } startRun(); endHandled = false; return; }
+        if (s === 'run') { if (state.screen === 'run' && !state.ended) return; if (state.screen === 'run' && state.ended && !state.twinRun) { showScreen('result'); return; } startRun(); endHandled = false; return; }
         if (s === 'result' && !state.evaluated) return;
         showScreen(s); return;
       }
@@ -1173,7 +1239,7 @@
     $('#skipBtn').addEventListener('click', () => { state.sim = DAY_END; state.ended = true; state.playing = false; update(); });
     $('#stopBtn').addEventListener('click', async () => {
       if (!state.ended) { const was = state.playing; state.playing = false; renderClock(); if (!(await ask('Den laufenden Arbeitstag abbrechen und zur Planung zurückkehren?'))) { state.playing = was; renderClock(); return; } }
-      endHandled = true; showScreen('plan');
+      endHandled = true; if (state.twinRun) { state.twinRun = false; $('#modeChip').hidden = true; showScreen('istbild'); } else showScreen('plan');
     });
     $('#followBtn').addEventListener('change', e => { state.follow = e.target.checked; window.Scene3D.setFollow(state.follow); });
     $$('.replanBtn').forEach(b => b.addEventListener('click', () => { endHandled = true; showScreen('plan'); }));
