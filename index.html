@@ -90,7 +90,7 @@
         </div>
       </div>
       <section class="ana-sec">
-        <div class="ana-sec-head"><span class="ana-num">A</span><div><h3>Rahmen</h3><p class="note">Zeit, Budget und Kapazität begrenzen die Simulation.</p></div></div>
+        <div class="ana-sec-head"><span class="ana-num">A</span><div><h3>Rahmen</h3><p class="note">Zeit, Budget und Umsetzungstempo begrenzen die Simulation.</p></div></div>
         <div class="frame-grid">
           <div class="budget-box">
             <div class="eyebrow" style="margin-bottom:6px">Zeithorizont</div>
@@ -107,11 +107,13 @@
             <p class="note" id="budgetModeHint"></p>
           </div>
           <div class="budget-box">
-            <div class="eyebrow" style="margin-bottom:6px">Kapazität</div>
-            <div class="params-grid one">
-              <label>Parallele Arbeitsstränge (0 = aus Teamgröße ableiten)<input type="number" id="goalLanes" min="0" max="4" value="0"></label>
-              <label>Maximale Investition je Jahr (€, 0 = keine Grenze)<input type="number" id="goalPerYear" min="0" step="10000" value="0"></label>
-            </div>
+            <div class="eyebrow" style="margin-bottom:6px">Umsetzungstempo</div>
+            <p class="note" style="margin:0 0 6px">Wie viele Maßnahmen kann die IT gleichzeitig umsetzen? Jede Maßnahme bindet ein Umsetzungsteam über Monate.</p>
+            <div class="segments wrap" id="lanesSeg" role="group" aria-label="Gleichzeitige Maßnahmen"></div>
+            <p class="note" id="lanesHint"></p>
+            <label class="switch" style="margin-top:8px"><input type="checkbox" id="perYearOn"><span>Investition je Jahr begrenzen</span></label>
+            <div class="params-grid one" id="perYearRow" style="margin-top:6px"><label>Höchstens je Jahr (€)<input type="number" id="goalPerYear" min="0" step="10000" value="0"></label></div>
+            <p class="note" id="perYearHint"></p>
           </div>
         </div>
       </section>
@@ -496,7 +498,7 @@
       </section>
 
       <section class="ana-sec" aria-labelledby="anaPathH">
-        <div class="ana-sec-head"><span class="ana-num">E</span><div><h3 id="anaPathH">Transformationspfad und Dauer</h3><p class="note">Die Roadmap als Zeitplan mit zwei parallelen Arbeitssträngen. Typische Dauer je Schritt: Stufe 2 drei Monate, Stufe 3 fünf, Stufe 4 sechs, Stufe 5 acht Monate; Organisationsschritte dauern ein Drittel länger. Voraussetzungen werden eingehalten, Schritte im selben Feld folgen aufeinander.</p></div></div>
+        <div class="ana-sec-head"><span class="ana-num">E</span><div><h3 id="anaPathH">Transformationspfad und Dauer</h3><p class="note">Die Roadmap als Zeitplan mit zwei gleichzeitigen Maßnahmen. Typische Dauer je Schritt: Stufe 2 drei Monate, Stufe 3 fünf, Stufe 4 sechs, Stufe 5 acht Monate; Organisationsschritte dauern ein Drittel länger. Voraussetzungen werden eingehalten, Schritte im selben Feld folgen aufeinander.</p></div></div>
         <p class="road-summary" id="pathSummary"></p>
         <div class="chart-card"><div id="pathChart"></div></div>
       </section>
