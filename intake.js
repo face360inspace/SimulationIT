@@ -51,6 +51,20 @@ window.Intake = (function () {
     });
     return out;
   }
+  /* Antworten eines Kunden-Agenten: etwas geringeres Gewicht als Menschen,
+     Belege werden mitgeführt. */
+  function signalsFromAgentAnswers(agentAnswers, humanAnswers) {
+    const out = [];
+    QUESTIONS.forEach(q => {
+      const x = agentAnswers && agentAnswers[q.id]; if (!x) return;
+      if (humanAnswers && humanAnswers[q.id]) return; // menschliche Antwort hat Vorrang
+      const ev = x.evidence ? ' · Beleg: ' + x.evidence : '';
+      if (x.a === 'yes') out.push({ field: q.field, stage: q.stage, weight: .8, source: 'KI-Agent des Kunden', text: 'Bestätigt: ' + q.text + ev });
+      else if (x.a === 'partly') out.push({ field: q.field, stage: q.stage, weight: .4, source: 'KI-Agent des Kunden', text: 'Teilweise: ' + q.text + ev });
+      else out.push({ field: q.field, stage: q.stage, weight: -.8, source: 'KI-Agent des Kunden', text: 'Verneint: ' + q.text + ev });
+    });
+    return out;
+  }
   const pct = v => Math.round(v * 100) + ' %';
   function signalsFromMetrics(m) {
     const s = [];
@@ -158,5 +172,5 @@ window.Intake = (function () {
     return { steps: out, totalMonths: total };
   }
 
-  return { detectTools, signalsFromTools, signalsFromAnswers, signalsFromMetrics, propose, calibrate, quickWins, schedule, STEP_MONTHS };
+  return { detectTools, signalsFromTools, signalsFromAnswers, signalsFromAgentAnswers, signalsFromMetrics, propose, calibrate, quickWins, schedule, STEP_MONTHS };
 })();

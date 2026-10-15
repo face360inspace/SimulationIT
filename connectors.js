@@ -198,6 +198,39 @@ window.Connectors = (function () {
     return out;
   }
 
+  /* ---------- Kunden-Agenten befragen (OpenAI-kompatibler Endpunkt) ---------- */
+  function extractJSON(text) {
+    if (typeof text !== 'string') return text;
+    const a = text.indexOf('{'), b = text.lastIndexOf('}');
+    if (a < 0 || b < a) throw new Error('Keine JSON-Antwort erkannt');
+    return JSON.parse(text.slice(a, b + 1));
+  }
+  async function askAgent(cfg, questions, progress) {
+    const prompt = 'Du bist der Betriebsassistent der IT-Abteilung und kennst Werkzeuge, Prozesse und Kennzahlen. Beantworte die folgenden Fragen zum Ist-Zustand ausschließlich als JSON im Format {"answers":[{"id":"<id>","answer":"yes|partly|no","evidence":"<kurze Begründung mit Zahlen oder Systemnamen>"}]}. Antworte mit "no", wenn dir Belege fehlen.\n\nFragen:\n' + questions.map(q => q.id + ': ' + q.text).join('\n');
+    const headers = { 'Content-Type': 'application/json' };
+    if (cfg.apiKey) headers.Authorization = 'Bearer ' + cfg.apiKey;
+    if (progress) progress('Agent wird befragt …');
+    const body = cfg.format === 'webhook' ? { questions } : { model: cfg.model || 'default', temperature: 0, messages: [{ role: 'system', content: 'Antworte nur mit JSON.' }, { role: 'user', content: prompt }] };
+    const res = await fetch(cfg.endpoint, { method: 'POST', headers, mode: 'cors', body: JSON.stringify(body) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const j = await res.json();
+    let content = j;
+    if (j.choices && j.choices[0] && j.choices[0].message) content = j.choices[0].message.content;
+    else if (Array.isArray(j.content) && j.content[0] && j.content[0].text) content = j.content[0].text;
+    else if (j.output_text) content = j.output_text;
+    else if (j.answer || j.output || j.response) content = j.answer || j.output || j.response;
+    const parsed = extractJSON(content);
+    return normalizeAgentAnswers(parsed);
+  }
+  function normalizeAgentAnswers(parsed) {
+    const out = {};
+    const list = Array.isArray(parsed) ? parsed : (parsed.answers || parsed.antworten || null);
+    const norm = v => { const s = String(v || '').toLowerCase(); if (/^(yes|ja|true|y|j)$/.test(s)) return 'yes'; if (/partly|teil|partial|some/.test(s)) return 'partly'; if (/^(no|nein|false|n)$/.test(s) || /no |nein|nicht/.test(s)) return 'no'; return null; };
+    if (list) list.forEach(x => { const id = x.id || x.question || x.frage; const a = norm(x.answer || x.antwort || x.value); if (id && a) out[id] = { a, evidence: x.evidence || x.beleg || x.begründung || '' }; });
+    else Object.keys(parsed).forEach(k => { const v = parsed[k]; const a = typeof v === 'object' ? norm(v.answer || v.antwort) : norm(v); if (a) out[k] = { a, evidence: typeof v === 'object' ? (v.evidence || v.beleg || '') : '' }; });
+    return out;
+  }
+
   /* ---------- Beispieldaten ---------- */
   function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
   const DEMO_TEXTS = {
@@ -252,5 +285,5 @@ window.Connectors = (function () {
     return { incidents, requests, changes, cis, employees, customer: 'Nordlicht Maschinenbau GmbH (Beispiel)', docs: 'Architekturüberblick (Auszug): Clients werden per SCCM mit Image bespielt; Inventar in der CMDB von ServiceNow. Active Directory und Entra ID mit MFA über Microsoft Authenticator, kein Single Sign-on für Fachanwendungen. Monitoring der Server mit PRTG, Alarme per E-Mail. Skripte liegen in GitLab, Patch-Management über WSUS. ServiceNow ITSM mit Incident-, Request- und Change-Prozess, Self-Service-Portal vorhanden, aber wenig genutzt. Defender for Endpoint auf allen Clients, SIEM geplant. Rollen und Prozesse nach ITIL dokumentiert, Betriebshandbuch im Wiki.' };
   }
 
-  return { parseCSV, parseAny, parseDate, normalize, classify, metrics, fetchServiceNow, fetchGraph, demoData };
+  return { parseCSV, parseAny, parseDate, normalize, classify, metrics, fetchServiceNow, fetchGraph, askAgent, normalizeAgentAnswers, demoData };
 })();

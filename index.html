@@ -157,6 +157,17 @@
 
       <section class="ana-sec" aria-labelledby="inIvH">
         <div class="ana-sec-head"><span class="ana-num">D</span><div><h3 id="inIvH">Betriebswissen der Delivery-Teams</h3><p class="note">Kurzinterview mit 21 Fragen, je drei pro Handlungsfeld. Antworten stützen oder widerlegen die Stufe, die Daten und Dokumente nahelegen.</p></div></div>
+        <div class="src-box" style="margin-bottom:12px">
+          <div class="eyebrow" style="margin-bottom:8px">Agenten des Kunden befragen</div>
+          <p class="note" style="margin-bottom:8px">Betreibt der Kunde einen eigenen KI-Assistenten mit Zugriff auf Betriebswissen (Now Assist, Copilot, ein interner Agent), beantwortet er die 21 Fragen selbst und liefert Belege. OpenAI-kompatibler Chat-Endpunkt oder Webhook, der <code>{"answers":[{"id","answer","evidence"}]}</code> zurückgibt. Menschliche Antworten haben Vorrang; Agentenantworten zählen mit geringerem Gewicht.</p>
+          <div class="params-grid two">
+            <label>Endpunkt<input type="url" id="agentEndpoint" placeholder="https://agent.kunde.de/v1/chat/completions"></label>
+            <label>Format<select id="agentFormat"><option value="openai">OpenAI-kompatibel (chat/completions)</option><option value="webhook">Webhook mit Antworten-JSON</option></select></label>
+            <label>API-Schlüssel<input type="password" id="agentKey" autocomplete="off"></label>
+            <label>Modell (optional)<input type="text" id="agentModel" placeholder="z. B. gpt-4.1, claude-sonnet-5-5, intern"></label>
+          </div>
+          <div class="actions" style="margin-top:8px"><button type="button" class="btn" id="agentAskBtn">Agent befragen</button><label class="btn ghost" for="agentAnswersFile">Antworten einlesen (JSON)</label><input type="file" id="agentAnswersFile" accept=".json,.txt" hidden><button type="button" class="btn ghost" id="agentClearBtn">Agentenantworten verwerfen</button><span class="note" id="agentStatus"></span></div>
+        </div>
         <div class="questions" id="questionList"></div>
       </section>
 

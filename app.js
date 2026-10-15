@@ -34,7 +34,7 @@
     assessment: store.get('zt.assessment', null), assessed: store.get('zt.assessed', false),
     target: store.get('zt.target', 5),
     params: Object.assign({}, PARAMS, store.get('zt.params', {})),
-    intake: Object.assign({ customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false, extra: {} }, store.get('zt.intake', {})),
+    intake: Object.assign({ customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false, extra: {}, agentAnswers: {} }, store.get('zt.intake', {})),
     frameIdx: store.get('zt.frame', null),
     vary: store.get('zt.vary', false),
     runCount: 0
@@ -697,7 +697,7 @@
     state.assessment = {}; FIELDS.forEach(f => { state.assessment[f.id] = 2; }); state.assessed = false; state.target = 5;
     state.params = Object.assign({}, PARAMS); state.frameIdx = null; state.levelView = 3;
     EVENTS.forEach(e => { e.freq = DEFAULT_FREQ[e.id]; });
-    state.intake = { customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false, extra: {} }; rawData = null; rawExtra = {};
+    state.intake = { customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false, extra: {}, agentAnswers: {} }; rawData = null; rawExtra = {};
     const pg = $('#paramsGrid'); if (pg) { pg.innerHTML = ''; $('#freqGrid').innerHTML = ''; }
     $('#feed').innerHTML = ''; window.Scene3D.reset();
     endHandled = true;
@@ -729,7 +729,7 @@
     const ids = TOOL_CATALOG.map(t => t.id).filter(id => it.manual[id] === true || (it.manual[id] !== false && detPos.indexOf(id) >= 0));
     const negs = detNeg.filter(id => it.manual[id] !== true);
     const extraSig = []; Object.keys(it.extra || {}).forEach(k => { const r = it.extra[k]; if (r && r.signals) r.signals.forEach(s => extraSig.push(s)); });
-    return I.signalsFromMetrics(it.metrics).concat(I.signalsFromTools(ids, negs), I.signalsFromAnswers(it.answers), extraSig);
+    return I.signalsFromMetrics(it.metrics).concat(I.signalsFromTools(ids, negs), I.signalsFromAnswers(it.answers), I.signalsFromAgentAnswers(it.agentAnswers || {}, it.answers), extraSig);
   }
   function extraCtx() { const it = state.intake; return { employees: it.employees || 300, ticketsPerMonth: it.metrics && it.metrics.tickets ? it.metrics.perMonth : 0 }; }
   function rederiveExtras() { const it = state.intake; Object.keys(rawExtra).forEach(id => { const r = window.Sources.derive(id, rawExtra[id], extraCtx()); if (r) it.extra[id] = r; }); }
@@ -784,6 +784,7 @@
     const tools = it.detected.filter(d => !d.negated).length + Object.keys(it.manual).filter(k => it.manual[k]).length; if (tools) parts.push(tools + ' Werkzeuge');
     const qs = Object.keys(it.answers).length; if (qs) parts.push(qs + ' Antworten');
     const ex = Object.keys(it.extra || {}).length; if (ex) parts.push(ex + ' weitere Systeme');
+    const ag = Object.keys(it.agentAnswers || {}).length; if (ag) parts.push(ag + ' Agentenantworten');
     $('#intakeReady').textContent = parts.length ? 'Bereit: ' + parts.join(', ') + '.' : 'Noch keine Quelle. Die Analyse nimmt dann Stufe 1 in allen Feldern an.';
     renderSrcStatus();
   }
@@ -830,8 +831,10 @@
   }
   function renderQuestions() {
     const it = state.intake;
-    $('#questionList').innerHTML = QUESTIONS.map(q => '<div class="q"><div class="qf">' + fieldName(q.field) + ' · Stufe ' + q.stage + '</div><div>' + esc(q.text) + '</div><div class="segments">' +
-      [['yes', 'Ja', ''], ['partly', 'Teilweise', 'partly'], ['no', 'Nein', 'no']].map(o => '<button type="button" class="' + o[2] + '" data-q="' + q.id + '" data-a="' + o[0] + '" aria-pressed="' + (it.answers[q.id] === o[0]) + '">' + o[1] + '</button>').join('') + '</div></div>').join('');
+    const lbl = { yes: 'Ja', partly: 'Teilweise', no: 'Nein' };
+    $('#questionList').innerHTML = QUESTIONS.map(q => { const ag = it.agentAnswers && it.agentAnswers[q.id]; return '<div class="q"><div class="qf">' + fieldName(q.field) + ' · Stufe ' + q.stage + '</div><div>' + esc(q.text) + '</div><div class="segments">' +
+      [['yes', 'Ja', ''], ['partly', 'Teilweise', 'partly'], ['no', 'Nein', 'no']].map(o => '<button type="button" class="' + o[2] + '" data-q="' + q.id + '" data-a="' + o[0] + '" aria-pressed="' + (it.answers[q.id] === o[0]) + '">' + o[1] + '</button>').join('') + '</div>' +
+      (ag ? '<div class="agent-note"><b>Laut Agent: ' + lbl[ag.a] + '.</b>' + (ag.evidence ? ' ' + esc(ag.evidence) : '') + (it.answers[q.id] ? ' · von Ihnen überschrieben' : '') + '</div>' : '') + '</div>'; }).join('');
   }
   function renderProposal() {
     const it = state.intake, p = intakeProposal();
@@ -853,6 +856,7 @@
     if (it.metrics && it.metrics.tickets) items.push({ name: 'ServiceNow / ITSM', sum: it.metrics.tickets + ' Tickets, ' + it.metrics.changes + ' Changes, ' + it.metrics.cis + ' CIs · ' + it.metrics.months.toFixed(1) + ' Monate', note: pct(it.metrics.selfServiceShare) + ' Self-Service · ' + pct(it.metrics.autoShare) + ' automatisch · Ø ' + fmtDur(it.metrics.mttrHours) });
     const tl = it.detected.filter(d => !d.negated).length; if (tl || it.docText) items.push({ name: 'Dokumentation', sum: tl + ' Werkzeuge erkannt, ' + it.detected.filter(d => d.negated).length + ' als nicht vorhanden', note: it.docText ? Math.round(it.docText.length / 1000) + ' Tsd. Zeichen ausgewertet' : '' });
     const qs = Object.keys(it.answers).length; if (qs) items.push({ name: 'Interview', sum: qs + ' von ' + QUESTIONS.length + ' Fragen beantwortet', note: Object.values(it.answers).filter(v => v === 'yes').length + ' ja · ' + Object.values(it.answers).filter(v => v === 'partly').length + ' teilweise · ' + Object.values(it.answers).filter(v => v === 'no').length + ' nein' });
+    const ag = Object.keys(it.agentAnswers || {}); if (ag.length) items.push({ name: 'KI-Agent des Kunden', sum: ag.length + ' Fragen vom Agenten beantwortet, ' + ag.filter(k => it.answers[k]).length + ' davon von Menschen überschrieben', note: ag.filter(k => it.agentAnswers[k].evidence).length + ' mit Beleg' });
     window.Sources.SOURCES.forEach(s => { const r = it.extra && it.extra[s.id]; if (r) items.push({ name: s.name, sum: r.summary, note: (r.note || '') + (r.signals && r.signals.length ? (r.note ? ' · ' : '') + r.signals.length + ' Signale' : '') }); });
     $('#dataGrid').innerHTML = items.length ? items.map(i => '<div class="data-item"><b>' + esc(i.name) + '</b><span>' + esc(i.sum) + '</span>' + (i.note ? '<small>' + esc(i.note) + '</small>' : '') + '</div>').join('') : '<div class="data-item"><span>Keine Quellen geladen.</span></div>';
     $('#quickWinList').innerHTML = qw.length ? qw.map(w => '<li><span class="lv-badge l' + w.stage + '">' + w.stage + '</span><span class="pv-body"><span class="pv-title">' + esc(w.title) + '<span class="qw-badge">Aufwand ' + w.effort + '</span></span><span class="pv-sub">' + esc(w.why) + ' Handlungsfeld: ' + fieldName(w.field) + ', Stufe ' + w.stage + '.</span></span></li>').join('') : '<li><span class="pv-body"><span class="pv-sub">Quick Wins erscheinen, sobald Ticketdaten vorliegen.</span></span></li>';
@@ -878,6 +882,7 @@
     if (it.metrics && it.metrics.cis) lines.push(it.metrics.cis + ' Konfigurationselemente der CMDB geprüft');
     const tl = it.detected.length; if (tl) lines.push(tl + ' Werkzeuge in der Dokumentation erkannt, davon ' + it.detected.filter(d => d.negated).length + ' als nicht vorhanden');
     const qs = Object.keys(it.answers).length; if (qs) lines.push(qs + ' Interviewantworten ausgewertet');
+    const agn = Object.keys(it.agentAnswers || {}).length; if (agn) lines.push('Kunden-Agent befragt: ' + agn + ' Antworten mit Belegen aufgenommen');
     const ex = Object.keys(it.extra || {}); if (ex.length) lines.push(ex.length + ' weitere Systeme ausgewertet: ' + ex.slice(0, 4).map(k => window.Sources.SOURCES.find(s => s.id === k).name).join(', ') + (ex.length > 4 ? ' und ' + (ex.length - 4) + ' mehr' : ''));
     lines.push('Signale je Handlungsfeld zusammengeführt und Reifegrad abgeleitet');
     lines.push('Quick Wins aus dem Ticketaufkommen bestimmt');
@@ -936,6 +941,7 @@
     state.intake.answers = { q_inventory: 'yes', q_zerotouch: 'no', q_roles: 'partly', q_hr: 'no', q_monitoring: 'yes', q_e2e: 'no', q_scripts: 'yes', q_workflow: 'no', q_itsm: 'yes', q_portal: 'partly', q_patch: 'yes', q_edr: 'partly', q_roles_org: 'yes', q_autoeng: 'no' };
     $('#docText').value = d.docs;
     rawExtra = window.Sources.demoAll(7); state.intake.extra = {};
+    state.intake.agentAnswers = { q_dex: { a: 'no', evidence: 'Kein DEX-Werkzeug im Softwareinventar, Gerätestörungen werden erst nach Meldung sichtbar.' }, q_scripts: { a: 'yes', evidence: 'GitLab-Gruppe it-ops mit 3 Repositories und 126 Skripten, WSUS-Patchfenster jeden zweiten Dienstag.' }, q_remediation: { a: 'no', evidence: 'PRTG-Alarme gehen per E-Mail an die Gruppe it-ops; kein Runbook wird automatisch ausgelöst.' }, q_proactive: { a: 'no', evidence: 'Statusmeldungen erfolgen reaktiv über das Intranet nach Rückfragen.' }, q_vuln: { a: 'partly', evidence: 'Defender Vulnerability Management aktiv, Priorisierung nach CVSS, Schließung manuell im Patchfenster.' }, q_product: { a: 'no', evidence: 'Organisation nach Technikbereichen: Service Desk, Infrastruktur, Anwendungen.' }, q_ca: { a: 'partly', evidence: 'Eine Conditional-Access-Richtlinie für Admin-Konten, keine für Mitarbeiter.' } };
     recomputeMetrics(); rederiveExtras(); saveIntake(); renderIntake();
     toast('Beispielkunde geladen: ' + d.customer + ' mit ' + Object.keys(rawExtra).length + ' weiteren Quellen');
   }
@@ -969,12 +975,12 @@
   }
   function profileJSON() {
     const it = state.intake; const p = intakeProposal(); const levels = {}; FIELDS.forEach(f => { levels[f.id] = p[f.id].final; });
-    return JSON.stringify({ version: 1, customer: it.customer, employees: it.employees, exportedAt: new Date().toISOString(), levels, overrides: it.overrides, answers: it.answers, detected: it.detected, manual: it.manual, docText: it.docText, metrics: it.metrics, counts: it.counts, extra: it.extra }, null, 2);
+    return JSON.stringify({ version: 1, customer: it.customer, employees: it.employees, exportedAt: new Date().toISOString(), levels, overrides: it.overrides, answers: it.answers, detected: it.detected, manual: it.manual, docText: it.docText, metrics: it.metrics, counts: it.counts, extra: it.extra, agentAnswers: it.agentAnswers }, null, 2);
   }
   function importProfile(text) {
     try {
       const j = JSON.parse(text);
-      state.intake = Object.assign({ customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false }, { customer: j.customer || '', employees: j.employees || 300, metrics: j.metrics || null, counts: j.counts || null, docText: j.docText || '', detected: j.detected || [], manual: j.manual || {}, answers: j.answers || {}, overrides: j.overrides || {}, extra: j.extra || {} });
+      state.intake = Object.assign({ customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false }, { customer: j.customer || '', employees: j.employees || 300, metrics: j.metrics || null, counts: j.counts || null, docText: j.docText || '', detected: j.detected || [], manual: j.manual || {}, answers: j.answers || {}, overrides: j.overrides || {}, extra: j.extra || {}, agentAnswers: j.agentAnswers || {} });
       rawData = null; rawExtra = {}; saveIntake(); renderIntake(); $('#docText').value = state.intake.docText; toast('Profil eingelesen' + (j.customer ? ': ' + j.customer : '') + '.');
     } catch (e) { toast('Die Datei ist kein gültiges Profil.'); }
   }
@@ -990,7 +996,21 @@
       st.textContent = 'Verbindung fehlgeschlagen: ' + (e && e.message ? e.message : e) + '. Prüfen Sie CORS-Regel, Adresse und Rechte, oder importieren Sie einen Export.';
     }
   }
+  async function askCustomerAgent() {
+    const cfg = { endpoint: $('#agentEndpoint').value.trim(), apiKey: $('#agentKey').value.trim(), model: $('#agentModel').value.trim(), format: $('#agentFormat').value };
+    if (!cfg.endpoint) { toast('Bitte den Endpunkt des Agenten angeben.'); return; }
+    const st = $('#agentStatus'); st.textContent = 'Agent wird befragt …';
+    try {
+      const ans = await window.Connectors.askAgent(cfg, QUESTIONS, msg => { st.textContent = msg; });
+      const n = Object.keys(ans).length; if (!n) throw new Error('keine verwertbaren Antworten');
+      state.intake.agentAnswers = ans; state.intake.applied = false; saveIntake(); renderQuestions(); renderReady();
+      st.textContent = n + ' von ' + QUESTIONS.length + ' Fragen beantwortet, ' + Object.values(ans).filter(x => x.evidence).length + ' mit Beleg.';
+    } catch (e) { st.textContent = 'Befragung fehlgeschlagen: ' + (e && e.message ? e.message : e) + '. Endpunkt, Schlüssel und CORS prüfen, oder Antworten als JSON einlesen.'; }
+  }
   function bindIntake() {
+    $('#agentAskBtn').addEventListener('click', askCustomerAgent);
+    $('#agentAnswersFile').addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => { try { const ans = window.Connectors.normalizeAgentAnswers(JSON.parse(String(r.result || ''))); const n = Object.keys(ans).length; if (!n) throw new Error('leer'); state.intake.agentAnswers = ans; state.intake.applied = false; saveIntake(); renderQuestions(); renderReady(); $('#agentStatus').textContent = n + ' Antworten eingelesen.'; } catch (err) { toast('Die Datei enthält keine verwertbaren Antworten.'); } }; r.readAsText(f); e.target.value = ''; });
+    $('#agentClearBtn').addEventListener('click', () => { state.intake.agentAnswers = {}; state.intake.applied = false; saveIntake(); renderQuestions(); renderReady(); $('#agentStatus').textContent = ''; });
     $('#custName').addEventListener('input', e => { state.intake.customer = e.target.value; saveIntake(); });
     $('#custEmployees').addEventListener('change', e => { state.intake.employees = Math.max(10, parseInt(e.target.value, 10) || 300); state.intake.applied = false; saveIntake(); if (rawData) recomputeMetrics(); else { renderSnResult(); renderReady(); } });
     $('#demoBtn').addEventListener('click', loadDemo);

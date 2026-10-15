@@ -35,7 +35,8 @@ window.Sources = (function () {
     { id: 'ops', name: 'Telemetrie und Betrieb' },
     { id: 'security', name: 'Sicherheit und Compliance' },
     { id: 'org', name: 'Organisation, Finanzen, Wissen' },
-    { id: 'people', name: 'Sicht der Mitarbeiter' }
+    { id: 'people', name: 'Sicht der Mitarbeiter' },
+    { id: 'agents', name: 'KI-Agenten und Bots' }
   ];
 
   const SOURCES = [
@@ -303,6 +304,65 @@ window.Sources = (function () {
         return { metrics: m, signals: s, summary: Math.round(perMonth) + ' Anliegen je Monat außerhalb des ITSM' + (m.shadowShare !== null ? ' · ' + pct(m.shadowShare) + ' Schattenaufkommen' : ''), shadowPerMonth: perMonth };
       },
       demo(rand) { const t = ['Kann mir jemand schnell das Passwort zurücksetzen?', 'Drucker im 2. OG geht wieder nicht', 'Brauche Zugriff auf das Projektlaufwerk', 'Teams hängt bei mir seit heute früh', 'Wer kann mir Visio freischalten?', 'WLAN im Besprechungsraum ist weg', 'Outlook startet nicht']; const out = []; for (let i = 0; i < 190; i++) out.push({ message: t[Math.floor(rand() * t.length)], channel: rand() < .6 ? 'Teams: IT-Hilfe' : 'Postfach it@', date: iso(daysAgo(Math.floor(rand() * 180))) }); return out; }
+    },
+    {
+      id: 'agentlogs', group: 'agents', name: 'Konversationen von KI-Assistenten und Chatbots', systems: 'Now Assist, Virtual Agent, Copilot, Moveworks, Aisera',
+      tells: 'Anliegen je Monat, Anteil ohne menschliche Übergabe gelöst (Containment), Eskalationen, häufigste Themen. Zeigt, welche Nachfrage der Agent bereits abfängt.', fields: ['service', 'automation'],
+      columns: 'timestamp, intent, resolved, escalated, satisfaction, text',
+      derive(rows, ctx) {
+        const per = months(rows, r => date(col(r, ['timestamp', 'created', 'date', 'zeit', 'started'])));
+        const res = rows.map(r => String(col(r, ['resolved', 'contained', 'gelöst', 'deflected', 'outcome', 'ergebnis'])).toLowerCase());
+        const esc = rows.map(r => String(col(r, ['escalated', 'handoff', 'eskaliert', 'transferred', 'übergabe'])).toLowerCase());
+        const sat = rows.map(r => num(col(r, ['satisfaction', 'csat', 'rating', 'zufriedenheit', 'bewertung']))).filter(v => v !== null);
+        const byType = {}; rows.forEach(r => { const t = window.Connectors.classify(String(col(r, ['text', 'utterance', 'intent', 'topic', 'thema', 'anliegen'])), '', ''); byType[t] = (byType[t] || 0) + 1; });
+        const m = { conversations: rows.length, perMonth: rows.length / per, containment: share(res, v => /true|yes|ja|1|resolved|contained|gelöst|deflected|success/.test(v) && !/not|nicht|un/.test(v)), escalation: share(esc, v => /true|yes|ja|1|agent|human|mensch/.test(v)), satisfaction: sat.length ? avg(sat) : null, byType };
+        const s = [sig('service', 3, 1, 'KI-Assistent im Einsatz: ' + Math.round(m.perMonth) + ' Konversationen je Monat, ' + pct(m.containment) + ' ohne Übergabe gelöst')];
+        if (m.containment >= .5) { s.push(sig('service', 4, .5, 'Containment ' + pct(m.containment) + ': der Assistent löst die Mehrheit der Anliegen selbst')); s.push(sig('automation', 3, .7, 'Assistent führt Lösungen aus, nicht nur Antworten')); }
+        else if (m.containment < .3) s.push(sig('service', 4, -.3, 'Containment nur ' + pct(m.containment) + ': der Assistent übergibt meist an Menschen'));
+        const calib = {}; if (ctx.employees) Object.keys(byType).forEach(t => { const ev = EVENTS.find(e => e.id === t); if (!ev || byType[t] < 5) return; calib[t] = ev.perCompany ? byType[t] / per : byType[t] / per / ctx.employees * 100; });
+        return { metrics: m, signals: s, summary: Math.round(m.perMonth) + ' Konversationen je Monat · Containment ' + pct(m.containment) + ' · Eskalation ' + pct(m.escalation), calib, quickWin: m.containment < .4 ? { title: 'Wissensbasis und Aktionen des Assistenten ausbauen', why: 'Der KI-Assistent löst nur ' + pct(m.containment) + ' der ' + Math.round(m.perMonth) + ' monatlichen Anliegen selbst. Die häufigsten Themen (' + Object.keys(byType).filter(k => k !== 'other').sort((a, b) => byType[b] - byType[a]).slice(0, 3).map(k => { const e = EVENTS.find(x => x.id === k); return e ? e.title.split(':')[0] : k; }).join(', ') + ') lassen sich mit Aktionen statt Artikeln abschließen.', field: 'service', stage: 3, effort: 'gering' } : null };
+      },
+      demo(rand) { const t = ['Passwort zurücksetzen', 'Wie beantrage ich Visio?', 'Mein Notebook ist langsam', 'VPN verbindet nicht', 'Wo finde ich das Projektlaufwerk?', 'Teams Audio geht nicht', 'Neuen Mitarbeiter anmelden', 'Drucker einrichten']; const out = []; for (let i = 0; i < 410; i++) { const r = rand() < .38; out.push({ timestamp: iso(daysAgo(Math.floor(rand() * 180))), intent: t[Math.floor(rand() * t.length)], resolved: r ? 'true' : 'false', escalated: r ? 'false' : (rand() < .8 ? 'true' : 'false'), satisfaction: Math.round(2 + rand() * 3) }); } return out; }
+    },
+    {
+      id: 'agentactions', group: 'agents', name: 'Aktionsprotokolle autonomer Agenten und RPA-Bots', systems: 'Now Assist Agents, UiPath, Automation Anywhere, eigene Agenten',
+      tells: 'Ausgeführte Aktionen, Anteil ohne menschliche Freigabe, Erfolgsquote, Risikoklassen. Zeigt, wie weit Agenten heute schon handeln dürfen.', fields: ['automation', 'telemetry', 'org'],
+      columns: 'timestamp, agent, action, outcome, approval, riskClass',
+      derive(rows) {
+        const per = months(rows, r => date(col(r, ['timestamp', 'started', 'date', 'zeit'])));
+        const out = rows.map(r => String(col(r, ['outcome', 'result', 'status', 'ergebnis'])).toLowerCase());
+        const appr = rows.map(r => String(col(r, ['approval', 'approvedBy', 'freigabe', 'mode', 'humanInLoop'])).toLowerCase());
+        const risk = rows.map(r => String(col(r, ['riskClass', 'risk', 'risiko', 'klasse'])).toLowerCase()).filter(Boolean);
+        const agents = Array.from(new Set(rows.map(r => String(col(r, ['agent', 'bot', 'workflow', 'name']))))).filter(Boolean);
+        const actions = Array.from(new Set(rows.map(r => String(col(r, ['action', 'aktion', 'task', 'skill']))))).filter(Boolean);
+        const m = { actions: rows.length, perMonth: rows.length / per, agents: agents.length, actionTypes: actions.length, successRate: share(out, v => /success|ok|done|erfolg|completed|true/.test(v)), autonomousShare: share(appr, v => /auto|none|keine|self|ohne|policy|no/.test(v) && !/human|manual|mensch|required/.test(v)), riskClassed: risk.length / Math.max(1, rows.length) };
+        const trig = rows.map(r => String(col(r, ['trigger', 'auslöser', 'source', 'initiatedBy'])).toLowerCase());
+        const s = [sig('automation', 3, 1, agents.length + ' Agenten oder Bots führen ' + Math.round(m.perMonth) + ' Aktionen je Monat aus (' + actions.length + ' Aktionstypen, ' + pct(m.successRate) + ' erfolgreich)')];
+        if (trig.some(t => /alert|event|monitor|alarm|anomal/.test(t))) s.push(sig('automation', 4, .8, 'Agentenaktionen werden von Alarmen oder Ereignissen ausgelöst'));
+        if (m.autonomousShare >= .6 && m.successRate >= .95 && m.riskClassed >= .8) s.push(sig('automation', 5, 1, pct(m.autonomousShare) + ' der Aktionen ohne menschliche Freigabe innerhalb klassifizierter Risikoklassen'));
+        else if (m.autonomousShare >= .3) s.push(sig('automation', 5, .4, pct(m.autonomousShare) + ' der Aktionen laufen ohne Freigabe'));
+        if (m.riskClassed >= .8) s.push(sig('org', 5, .6, 'Jede Agentenaktion trägt eine Risikoklasse: Policy-gesteuerte Freigaben vorhanden')); else if (rows.length) s.push(sig('org', 5, -.4, 'Agentenaktionen ohne Risikoklassifizierung: keine Leitplanken dokumentiert'));
+        if (actions.some(a => /diagnos|analy|root cause|ursache|triage/i.test(a))) s.push(sig('telemetry', 5, .5, 'Agenten übernehmen Diagnose und Ursachenanalyse'));
+        return { metrics: m, signals: s, summary: agents.length + ' Agenten · ' + Math.round(m.perMonth) + ' Aktionen je Monat · ' + pct(m.autonomousShare) + ' autonom · ' + pct(m.successRate) + ' erfolgreich' };
+      },
+      demo(rand) { const out = []; const acts = [['RPA Lizenzbuchung', 'SAP-Benutzer anlegen', 'manual'], ['RPA Lizenzbuchung', 'Lizenz im Portal buchen', 'manual'], ['RPA Rechnungsabgleich', 'Rechnung prüfen', 'auto']]; for (let i = 0; i < 96; i++) { const a = acts[Math.floor(rand() * acts.length)]; out.push({ timestamp: iso(daysAgo(Math.floor(rand() * 180))), agent: a[0], action: a[1], outcome: rand() < .93 ? 'success' : 'failed', approval: a[2], riskClass: '' }); } return out; }
+    },
+    {
+      id: 'agentregistry', group: 'agents', name: 'Agentenregister', systems: 'Agentenkatalog, AI-Governance-Register, Copilot-Studio-Übersicht',
+      tells: 'Welche Agenten es gibt, wofür, mit welchem Verantwortlichen und welchen Leitplanken. Grundlage für Governance und Stufe 5.', fields: ['org', 'automation'],
+      columns: 'agent, platform, useCase, owner, guardrails, status',
+      derive(rows) {
+        const own = rows.map(r => String(col(r, ['owner', 'verantwortlich', 'responsible', 'product owner'])));
+        const gr = rows.map(r => String(col(r, ['guardrails', 'policy', 'leitplanken', 'controls', 'approval']))).map(v => v.toLowerCase());
+        const act = rows.filter(r => /prod|aktiv|active|live/.test(String(col(r, ['status', 'stage', 'phase'])).toLowerCase()));
+        const m = { agents: rows.length, active: act.length, ownerShare: share(own, v => v.trim().length > 1), guardrailShare: share(gr, v => v.trim().length > 1 && !/none|keine|-|n\/a/.test(v)) };
+        const s = [];
+        if (m.agents) s.push(sig('automation', 4, .5, m.agents + ' Agenten im Register, ' + m.active + ' produktiv'));
+        if (m.ownerShare >= .9 && m.guardrailShare >= .8) s.push(sig('org', 5, .8, 'Jeder Agent hat Verantwortlichen und dokumentierte Leitplanken: Governance für autonome Systeme vorhanden')); else if (m.agents) s.push(sig('org', 5, -.5, 'Nur ' + pct(m.guardrailShare) + ' der Agenten mit dokumentierten Leitplanken'));
+        if (m.ownerShare >= .8) s.push(sig('org', 4, .4, 'Agenten haben benannte Product Owner'));
+        return { metrics: m, signals: s, summary: m.agents + ' Agenten · ' + m.active + ' produktiv · ' + pct(m.ownerShare) + ' mit Verantwortlichem · ' + pct(m.guardrailShare) + ' mit Leitplanken' };
+      },
+      demo(rand) { return [['Virtual Agent IT-Hilfe', 'ServiceNow Virtual Agent', 'Self-Service Standardanfragen', 'Service Desk Lead', 'nur Wissensartikel, keine Aktionen', 'produktiv'], ['RPA Lizenzbuchung', 'UiPath', 'SAP-Benutzer und Lizenzen', '', '', 'produktiv'], ['RPA Rechnungsabgleich', 'UiPath', 'Rechnungsprüfung', 'Finanzen', '', 'produktiv']].map(x => ({ agent: x[0], platform: x[1], useCase: x[2], owner: x[3], guardrails: x[4], status: x[5] })); }
     }
   ];
 
