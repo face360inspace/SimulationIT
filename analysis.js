@@ -25,6 +25,17 @@ window.Analysis = (function () {
   }
   const cum = s => { let c = 0; for (let k = 2; k <= s; k++) c += STAGE_COST[k - 1]; return c; };
 
+  /* Kalibrierung aus dem Realitätscheck: dur skaliert Wartezeit und Ausfall, ticket den Ticketanteil,
+     auto verschiebt den Anteil ohne menschlichen Eingriff (Punkte), ot die Stillstandsdauer.
+     U ist die verbleibende Unsicherheit des Zwillings (0 bis 1) und weitet die Streuung der Jahre. */
+  const NOCAL = { dur: 1, ticket: 1, auto: 0, ot: 1 };
+  let CAL = null, U = 0;
+  function setCalibration(f) { CAL = f ? Object.assign({}, NOCAL, f) : null; }
+  function calibration() { return CAL || NOCAL; }
+  function setUncertainty(u) { U = Math.max(0, Math.min(1, u || 0)); }
+  function uncertainty() { return U; }
+  const clampAuto = t => { t.prevented = Math.max(0, Math.min(t.occurrences, t.prevented + calibration().auto * t.occurrences)); return t; };
+
   /* Varianten je Ereignis für eine Stufenkonfiguration. */
   function variants(levels) {
     return EVENTS.map(e => { const eff = effectiveLevel(e, levels); return { e, level: eff.level, limiters: eff.limiters, v: e.v[eff.level - 1] }; });
@@ -34,13 +45,14 @@ window.Analysis = (function () {
 
   /* Erwartungswerte je Jahr (deterministisch). */
   function expected(levels, P) {
-    const t = { it: 0, user: 0, ot: 0, tickets: 0, touches: 0, prevented: 0, occurrences: 0 };
+    const t = { it: 0, user: 0, ot: 0, tickets: 0, touches: 0, prevented: 0, occurrences: 0 }, c = calibration();
     variants(levels).forEach(x => {
       const n = perYear(x.e, P);
-      t.occurrences += n; t.it += n * x.v.it; t.user += n * x.v.user; t.ot += n * (x.v.ot || 0); t.touches += n * x.v.touches;
-      if (x.v.ticket) t.tickets += n;
+      t.occurrences += n; t.it += n * x.v.it; t.user += n * x.v.user * c.dur; t.ot += n * (x.v.ot || 0) * c.ot; t.touches += n * x.v.touches;
+      if (x.v.ticket) t.tickets += n * c.ticket;
       if (x.v.prevented || x.v.touches === 0) t.prevented += n;
     });
+    clampAuto(t);
     t.cost = cost(t, P);
     return t;
   }
@@ -48,21 +60,23 @@ window.Analysis = (function () {
 
   /* Monte-Carlo: viele Jahre, jeweils Vorkommen je Ereignistyp und gestreute Aufwände. */
   function simulate(levels, P, seed) {
-    const vs = variants(levels);
+    const vs = variants(levels), c = calibration();
     const rand = rng(seed || 1);
     const years = [];
+    const spread = Math.min(0.9, P.spread + U * 0.5);
     for (let r = 0; r < P.runs; r++) {
       const t = { it: 0, user: 0, ot: 0, tickets: 0, touches: 0, prevented: 0, occurrences: 0 };
       vs.forEach(x => {
         const n = poisson(perYear(x.e, P), rand);
         for (let i = 0; i < n; i++) {
-          const f = 1 - P.spread + rand() * 2 * P.spread;
-          t.it += x.v.it * f; t.user += x.v.user * f; t.ot += (x.v.ot || 0) * f; t.touches += x.v.touches;
-          if (x.v.ticket) t.tickets++;
+          const f = 1 - spread + rand() * 2 * spread;
+          t.it += x.v.it * f; t.user += x.v.user * f * c.dur; t.ot += (x.v.ot || 0) * f * c.ot; t.touches += x.v.touches;
+          if (x.v.ticket) t.tickets += c.ticket;
           if (x.v.prevented || x.v.touches === 0) t.prevented++;
         }
         t.occurrences += n;
       });
+      clampAuto(t);
       t.cost = cost(t, P);
       years.push(t);
     }
@@ -168,5 +182,5 @@ window.Analysis = (function () {
     return { steps, end: cur, spent, startCost };
   }
 
-  return { expected, simulate, summary, candidates, roadmap, stepCost, variants, perYear };
+  return { expected, simulate, summary, candidates, roadmap, stepCost, variants, perYear, setCalibration, calibration, setUncertainty, uncertainty };
 })();

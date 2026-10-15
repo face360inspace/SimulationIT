@@ -26,7 +26,7 @@
 
   const allOne = () => { const o = {}; FIELDS.forEach(f => { o[f.id] = 1; }); return o; };
   const state = {
-    view: 'sim', screen: 'start', returnScreen: 'start', evaluated: false, ot: store.get('zt.ot', false), twinRun: false, twinLast: null, simResult: null,
+    view: 'sim', screen: 'start', returnScreen: 'start', evaluated: false, ot: store.get('zt.ot', false), twinRun: false, twinLast: null, simResult: null, calib: store.get('zt.calib', null), twinAck: store.get('zt.twinAck', null), twinQuality: null,
     goals: Object.assign({ touched: false, horizon: 36, budgetMode: 'needed', budget: 300000, lanes: 0, perYear: 0, items: { level: { on: true, v: 4 }, tickets: { on: true, v: 50 }, user: { on: true, v: 70 }, mttr: { on: true, v: 4 }, auto: { on: false, v: 50 }, cost: { on: false, v: 50 }, ot: { on: true, v: 70 } } }, store.get('zt.goals', {})),
     budgetIdx: store.get('zt.budget', 1),
     useAssessment: store.get('zt.useAssessment', false),
@@ -733,6 +733,7 @@
     state.params = Object.assign({}, PARAMS); state.frameIdx = null; state.levelView = 3;
     EVENTS.forEach(e => { e.freq = DEFAULT_FREQ[e.id]; });
     state.intake = { customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false, extra: {}, agentAnswers: {} }; rawData = null; rawExtra = {};
+    state.calib = null; window.Analysis.setCalibration(null); window.Analysis.setUncertainty(0); state.twinAck = null; state.twinQuality = null;
     state.simResult = null; state.goals = { touched: false, horizon: 36, budgetMode: 'needed', budget: 300000, lanes: 0, perYear: 0, items: { level: { on: true, v: 4 }, tickets: { on: true, v: 50 }, user: { on: true, v: 70 }, mttr: { on: true, v: 4 }, auto: { on: false, v: 50 }, cost: { on: false, v: 50 }, ot: { on: true, v: 70 } } };
     const pg = $('#paramsGrid'); if (pg) { pg.innerHTML = ''; $('#freqGrid').innerHTML = ''; }
     $('#feed').innerHTML = ''; window.Scene3D.reset();
@@ -928,43 +929,113 @@
   }
   function twinLevels() { const p = intakeProposal(); const L = {}; FIELDS.forEach(f => { L[f.id] = p[f.id].final; }); return L; }
   function startTwinRun() { endHandled = false; startRun({ twin: true, levels: twinLevels() }); toast('Validierungslauf: ein aus den Häufigkeiten erzeugter Arbeitstag auf dem Ist-Bild.'); }
-  function renderTwin() {
+  /* Zwillingsmodell: Erwartungswerte des Ist-Bilds mit kalibrierten Häufigkeiten, wahlweise mit oder ohne Kalibrierfaktoren. */
+  function twinModel(useCal) {
     const it = state.intake, L = twinLevels(), A = window.Analysis;
     const P = Object.assign({}, state.params, { employees: it.employees || state.params.employees });
     const cal = window.Intake.calibrate(it.metrics, it.employees);
-    // Häufigkeiten des Zwillings: kalibriert, wenn Daten vorliegen, sonst Standard
     const freqOf = e => { if (cal && cal.freq[e.id] !== null && cal.freq[e.id] !== undefined) return cal.freq[e.id]; const ex = []; Object.keys(it.extra || {}).forEach(k => { const r = it.extra[k]; if (r && r.calib && r.calib[e.id] !== undefined && r.calib[e.id] !== null) ex.push(r.calib[e.id]); }); return ex.length ? ex.reduce((s, v) => s + v, 0) / ex.length : e.freq; };
     const twinP = Object.assign({}, P, { coverage: cal ? cal.coverage : P.coverage });
     const saved = EVENTS.map(e => e.freq); EVENTS.forEach(e => { e.freq = freqOf(e); });
+    const active = calibActive();
+    if (!useCal) A.setCalibration(null);
+    const c = A.calibration();
     const exp = A.expected(L, twinP);
     const vs = A.variants(L);
-    let durW = 0, nW = 0, autoN = 0, prevN = 0; vs.forEach(x => { const n = A.perYear(x.e, twinP); const dur = x.v.steps.reduce((s, st) => s + st.d, 0) / 60; durW += dur * n; nW += n; if (x.v.touches === 0 || x.v.prevented) autoN += n; if (x.v.prevented) prevN += n; });
+    let durW = 0, nW = 0, autoN = 0, prevN = 0; vs.forEach(x => { const n = A.perYear(x.e, twinP); const dur = x.v.steps.reduce((s, st) => s + st.d, 0) / 60 * c.dur; durW += dur * n; nW += n; if (x.v.touches === 0 || x.v.prevented) autoN += n; if (x.v.prevented) prevN += n; });
     const perType = EVENTS.map(e => ({ e, twin: e.freq * (e.perCompany ? 1 : (it.employees || 300) / 100), measured: it.metrics && it.metrics.byType && it.metrics.byType[e.id] ? it.metrics.byType[e.id].perMonth : null, calibrated: !!(cal && cal.freq[e.id] !== null && cal.freq[e.id] !== undefined) }));
     EVENTS.forEach((e, i) => { e.freq = saved[i]; });
+    if (!useCal) A.setCalibration(active ? state.calib.f : null);
+    return { L, exp, mttr: nW ? durW / nW : 0, auto: nW ? Math.max(0, Math.min(1, autoN / nW + c.auto)) : 0, prev: nW ? prevN / nW : 0, perType, calibrated: perType.filter(p => p.calibrated).length };
+  }
+  const calibActive = () => !!(state.calib && state.calib.on);
+  /* Realitätscheck: Zeilen mit Messung, Erwartung, Abweichung und Hinweis; dazu die Qualität des Zwillings. */
+  function twinCheck() {
+    const it = state.intake, m = it.metrics && it.metrics.tickets ? it.metrics : null;
+    const model = twinModel(true), raw = calibActive() ? twinModel(false) : model;
+    const verdict = (tw, me, abs) => {
+      if (me === null || me === undefined || !isFinite(me)) return { d: null, cls: '', txt: 'keine Messung' };
+      if (abs) { const d = tw - me; const ad = Math.abs(d); return { d, cls: ad <= .05 ? 'ok' : ad <= .15 ? 'warn' : 'bad', txt: (d >= 0 ? '+' : '−') + Math.round(ad * 100) + ' Pkt.', rel: ad / .3 }; }
+      if (me === 0) return { d: null, cls: '', txt: 'keine Messung' };
+      const d = (tw - me) / me; const ad = Math.abs(d); return { d, cls: ad <= .2 ? 'ok' : ad <= .5 ? 'warn' : 'bad', txt: (d > 0 ? '+' : '−') + Math.round(ad * 100) + ' %', rel: ad };
+    };
+    const rowsOf = (M) => {
+      const rows = [];
+      const push = (key, label, me, tw, fmt, hintHi, hintLo, abs) => { const v = verdict(tw, me, abs); rows.push(Object.assign({ key, label, me, tw, fmt, abs, hint: v.d === null ? 'Quelle laden, um zu prüfen.' : v.cls === 'ok' ? 'Realitätsnah.' : (v.d > 0 ? hintHi : hintLo) }, v)); };
+      push('occ', 'Vorfälle und Anfragen je Monat', m ? m.perMonth : null, M.exp.occurrences / 12, v => fmtNum(Math.round(v)), 'Zwilling erzeugt mehr Nachfrage als gemessen: Ereignisse aus anderen Quellen (Monitoring, OT, Agenten) kommen zu den Tickets hinzu; Häufigkeiten oder Abdeckung prüfen.', 'Zwilling erzeugt weniger Nachfrage als gemessen: Häufigkeiten nicht kalibrierter Typen prüfen, Abdeckung senken.');
+      push('tickets', 'Tickets je Monat', m ? m.perMonth : null, M.exp.tickets / 12, v => fmtNum(Math.round(v)), 'Zwilling erzeugt mehr Tickets: Stufen in Service Management und Automatisierung im Zwilling vermutlich zu niedrig.', 'Zwilling erzeugt weniger Tickets als gemessen: Stufen im Zwilling zu hoch, oder Anfragen laufen in der Realität ohne Self-Service über Tickets.');
+      push('mttr', 'Ø Lösungszeit', m ? m.mttrHours : null, M.mttr, v => fmtDur(v), 'Zwilling löst langsamer als gemessen: Stufen zu niedrig angesetzt.', 'Zwilling löst schneller als gemessen: Reifegrad in Service Management oder Automatisierung zu hoch, oder Wartezeiten der Realität (Rückfragen, Warteschlangen, Schichten) sind im Zwilling nicht abgebildet.');
+      push('auto', 'Ohne menschlichen Eingriff gelöst', m ? m.autoShare : null, M.auto, v => pct(v), 'Zwilling automatisiert mehr als gemessen: Stufe Automatisierung im Zwilling prüfen.', 'Zwilling automatisiert weniger als gemessen: Automationen des Kunden sind in Ticketdaten sichtbar, aber im Zwilling nicht abgebildet.', true);
+      push('prev', 'Vorab erkannt (aus Monitoring)', m ? m.monitoringShare : null, M.prev, v => pct(v), 'Zwilling erkennt mehr vorab als gemessen: Stufe Telemetrie prüfen.', 'Zwilling erkennt weniger vorab als gemessen: Monitoring des Kunden im Zwilling unterschätzt.', true);
+      if (state.ot) { const oa = it.extra && it.extra.otalarms ? it.extra.otalarms.metrics.downtimeMinPerMonth : null; push('ot', 'Produktionsstillstand je Monat', oa, M.exp.ot / 12, v => fmtHours(v), 'Zwilling erzeugt mehr Stillstand: Stufe OT oder Häufigkeiten prüfen.', 'Zwilling erzeugt weniger Stillstand als gemessen: Stillstandsdauern in den OT-Ereignissen zu kurz oder Stufe OT zu hoch.'); }
+      return rows;
+    };
+    const rows = rowsOf(model), rawRows = raw === model ? rows : rowsOf(raw);
+    return { rows, rawRows, perType: model.perType, model, raw, verdict, quality: qualityOf(rows, rawRows) };
+  }
+  function qualityOf(rows, rawRows) {
+    const measured = rows.filter(r => r.d !== null);
+    const stampOf = (cls, list) => cls + '|' + list.map(r => r.key + r.cls).join(',') + '|' + (calibActive() ? state.calib.at : '');
+    if (!measured.length) return { cls: 'none', title: 'Zwilling nicht prüfbar', text: 'Es liegen keine Messwerte vor, gegen die sich der Zwilling prüfen lässt. Die Simulation rechnet mit ungeprüften Annahmen.', u: .3, issues: [], missing: rows.map(r => r.label), measured: 0, stamp: stampOf('none', []) };
+    const bad = measured.filter(r => r.cls === 'bad'), warn = measured.filter(r => r.cls === 'warn');
+    const resid = Math.max.apply(null, measured.map(r => r.rel)), rawMax = Math.max.apply(null, rawRows.filter(r => r.d !== null).map(r => r.rel));
+    const u = Math.min(1, Math.max(resid, 0.3 * rawMax));
+    const issues = bad.concat(warn).map(r => r.label + ': Zwilling ' + r.fmt(r.tw) + ', gemessen ' + r.fmt(r.me) + ' (' + r.txt + ')');
+    const missing = rows.filter(r => r.d === null).map(r => r.label);
+    let cls, title, text;
+    if (bad.length) { cls = 'bad'; title = 'Zwilling nicht belastbar'; text = bad.length + (bad.length === 1 ? ' Kennzahl weicht' : ' Kennzahlen weichen') + ' um mehr als 50 % von der Messung ab. Vor der Simulation kalibrieren oder Quellen ergänzen.'; }
+    else if (warn.length) { cls = 'warn'; title = 'Zwilling prüfenswert'; text = warn.length + (warn.length === 1 ? ' Kennzahl weicht' : ' Kennzahlen weichen') + ' um 20 bis 50 % ab. Simulation und Business Case erhalten einen Vorbehalt.'; }
+    else if (measured.length < 3) { cls = 'warn'; title = 'Zwilling dünn geprüft'; text = 'Nur ' + measured.length + (measured.length === 1 ? ' Kennzahl liegt' : ' Kennzahlen liegen') + ' als Messung vor. Weitere Quellen erhöhen die Belastbarkeit.'; }
+    else { cls = 'ok'; title = 'Zwilling realitätsnah'; text = 'Alle ' + measured.length + ' gemessenen Kennzahlen liegen innerhalb von 20 % der Erwartung.'; }
+    if (calibActive() && cls !== 'bad') text += ' Kalibriert am ' + new Date(state.calib.at).toLocaleDateString('de-DE') + '; die korrigierte Abweichung bleibt als Unsicherheit erhalten.';
+    return { cls, title, text, u, issues, missing, measured: measured.length, stamp: stampOf(cls, measured) };
+  }
+  /* Kalibrierung: Faktoren aus den Abweichungen ohne Kalibrierung, protokolliert und rücknehmbar. */
+  function calibrateTwin() {
+    const C = twinCheck(); const raw = C.rawRows; const f = { dur: 1, ticket: 1, auto: 0, ot: 1 }; const log = [];
+    const clampF = v => Math.max(.25, Math.min(4, v));
+    const row = k => raw.find(r => r.key === k && r.d !== null);
+    let r;
+    if ((r = row('mttr')) && r.tw > 0 && Math.abs(r.me / r.tw - 1) >= .02) { f.dur = clampF(r.me / r.tw); log.push({ t: 'Lösungszeit und Ausfallzeit × ' + fmtNum(f.dur, 2), s: 'Gemessen ' + r.fmt(r.me) + ', Zwilling ' + r.fmt(r.tw) + '. Wartezeiten und Produktivitätsverlust skalieren mit.' }); }
+    if ((r = row('tickets')) && r.tw > 0 && Math.abs(r.me / r.tw - 1) >= .02) { f.ticket = clampF(r.me / r.tw); log.push({ t: 'Ticketanteil × ' + fmtNum(f.ticket, 2), s: 'Gemessen ' + r.fmt(r.me) + ' je Monat, Zwilling ' + r.fmt(r.tw) + '.' }); }
+    if ((r = row('auto')) && Math.abs(r.me - r.tw) >= .02) { f.auto = Math.max(-.5, Math.min(.5, r.me - r.tw)); log.push({ t: 'Anteil ohne menschlichen Eingriff ' + (f.auto >= 0 ? '+' : '−') + Math.round(Math.abs(f.auto) * 100) + ' Punkte', s: 'Gemessen ' + pct(r.me) + ', Zwilling ' + pct(r.tw) + '.' }); }
+    if ((r = row('ot')) && r.tw > 0 && Math.abs(r.me / r.tw - 1) >= .02) { f.ot = clampF(r.me / r.tw); log.push({ t: 'Produktionsstillstand × ' + fmtNum(f.ot, 2), s: 'Gemessen ' + r.fmt(r.me) + ' je Monat, Zwilling ' + r.fmt(r.tw) + '.' }); }
+    const occ = row('occ'); if (occ && occ.cls !== 'ok') log.push({ t: 'Nachfrage nicht angepasst', s: 'Vorfälle und Anfragen werden über die Häufigkeiten je Ereignistyp kalibriert (Ticketdaten, weitere Quellen). Abweichung ' + occ.txt + ' bleibt; Häufigkeiten in der Prognose prüfen.' });
+    const prev = row('prev'); if (prev && prev.cls !== 'ok') log.push({ t: 'Vorab-Erkennung nicht angepasst', s: 'Abweichung ' + prev.txt + ' bleibt: Stufe Telemetrie im Ist-Bild prüfen.' });
+    if (!log.length) { toast('Keine Messwerte, aus denen sich Faktoren ableiten lassen.'); return; }
+    state.calib = { on: true, f, log, at: new Date().toISOString() }; store.set('zt.calib', state.calib);
+    window.Analysis.setCalibration(f); state.simResult = null; state.twinAck = null; store.set('zt.twinAck', null);
+    renderTwin(); scheduleAnalysis(); toast('Zwilling kalibriert: ' + log.filter(l => !/nicht angepasst/.test(l.t)).length + ' Faktoren gesetzt, Abweichungen protokolliert.');
+  }
+  function uncalibrateTwin() {
+    state.calib = null; store.set('zt.calib', null); window.Analysis.setCalibration(null); state.simResult = null; state.twinAck = null; store.set('zt.twinAck', null);
+    renderTwin(); scheduleAnalysis(); toast('Kalibrierung zurückgenommen.');
+  }
+  function twinQuality() {
+    if (!intakeHasData()) { const q = { cls: 'none', title: 'Kein Digital Twin aus Kundendaten', text: 'Die Simulation rechnet mit der gewählten Ausgangslage und Standardannahmen, ohne Prüfung gegen Messwerte.', u: .3, issues: [], missing: [], measured: 0, stamp: 'none' }; state.twinQuality = q; window.Analysis.setUncertainty(q.u); return q; }
+    const q = twinCheck().quality; state.twinQuality = q; window.Analysis.setUncertainty(q.u); return q;
+  }
+  function renderTwin() {
+    const it = state.intake, C = twinCheck(), M = C.model, Q = C.quality; state.twinQuality = Q; window.Analysis.setUncertainty(Q.u);
     const tile = (l, v, s) => '<div class="tile"><div class="lbl">' + l + '</div><div class="val">' + v + '</div>' + (s ? '<div class="rng">' + s + '</div>' : '') + '</div>';
-    $('#twinModel').innerHTML = tile('Handlungsfelder', FIELDS.length, 'Reife Ø ' + fmtNum(FIELDS.reduce((s, f) => s + L[f.id], 0) / FIELDS.length, 1)) + tile('Ereignistypen', EVENTS.length, perType.filter(p => p.calibrated).length + ' aus Daten kalibriert') + tile('Vorfälle und Anfragen je Monat', fmtNum(Math.round(exp.occurrences / 12)), 'davon Tickets ' + fmtNum(Math.round(exp.tickets / 12))) + tile('Ø Lösungszeit im Zwilling', fmtDur(nW ? durW / nW : null)) + tile('Ohne menschlichen Eingriff', pct(nW ? autoN / nW : 0), 'vorab erkannt ' + pct(nW ? prevN / nW : 0));
+    $('#twinModel').innerHTML = tile('Handlungsfelder', FIELDS.length, 'Reife Ø ' + fmtNum(FIELDS.reduce((s, f) => s + M.L[f.id], 0) / FIELDS.length, 1)) + tile('Ereignistypen', EVENTS.length, M.calibrated + ' aus Daten kalibriert') + tile('Vorfälle und Anfragen je Monat', fmtNum(Math.round(M.exp.occurrences / 12)), 'davon Tickets ' + fmtNum(Math.round(M.exp.tickets / 12))) + tile('Ø Lösungszeit im Zwilling', fmtDur(M.mttr || null)) + tile('Ohne menschlichen Eingriff', pct(M.auto), 'vorab erkannt ' + pct(M.prev));
     const m = it.metrics && it.metrics.tickets ? it.metrics : null;
     const lr = state.twinLast;
     $('#twinLastRun').innerHTML = lr ? '<div class="twin-run"><h4>Letzter Validierungslauf</h4><div class="tiles five">' + tile('Ereignisse am Tag', lr.events, m ? 'gemessen Ø ' + fmtNum(m.perMonth / 20, 1) + ' je Tag' : '') + tile('Tickets', lr.tickets, m ? 'gemessen Ø ' + fmtNum(m.perMonth / 20, 1) : '') + tile('IT-Aufwand', fmtHours(lr.it)) + tile('Ausfall Mitarbeiter', fmtHours(lr.user)) + (state.ot ? tile('Produktionsstillstand', fmtHours(lr.ot)) : tile('Verhindert / autonom', lr.prevented)) + '</div><p class="note" style="margin-top:8px">' + esc(lr.titles.join(' · ')) + (lr.open ? ' · ' + lr.open + ' über Nacht offen' : '') + '</p></div>' : '';
     $('#twinRunNote').textContent = lr ? 'Jeder Lauf erzeugt einen anderen Tag.' : 'Noch kein Validierungslauf.';
-    // Realitätscheck
-    const rows = [];
-    const verdict = (tw, me, abs) => {
-      if (me === null || me === undefined || !isFinite(me)) return { d: null, cls: '', txt: 'keine Messung' };
-      if (abs) { const d = tw - me; const ad = Math.abs(d); return { d, cls: ad <= .05 ? 'ok' : ad <= .15 ? 'warn' : 'bad', txt: (d >= 0 ? '+' : '−') + Math.round(ad * 100) + ' Pkt.' }; }
-      if (me === 0) return { d: null, cls: '', txt: 'keine Messung' };
-      const d = (tw - me) / me; const ad = Math.abs(d); return { d, cls: ad <= .2 ? 'ok' : ad <= .5 ? 'warn' : 'bad', txt: (d > 0 ? '+' : '−') + Math.round(ad * 100) + ' %' };
-    };
-    const push = (label, me, tw, fmt, hintHi, hintLo, abs) => { const v = verdict(tw, me, abs); rows.push('<tr><td>' + label + '</td><td>' + (me === null || me === undefined ? '–' : fmt(me)) + '</td><td>' + fmt(tw) + '</td><td class="' + v.cls + '">' + v.txt + '</td><td class="hint">' + (v.d === null ? 'Quelle laden, um zu prüfen.' : v.cls === 'ok' ? 'Realitätsnah.' : (v.d > 0 ? hintHi : hintLo)) + '</td></tr>'); };
-    push('Vorfälle und Anfragen je Monat', m ? m.perMonth : null, exp.occurrences / 12, v => fmtNum(Math.round(v)), 'Zwilling erzeugt mehr Nachfrage als gemessen: Ereignisse aus anderen Quellen (Monitoring, OT, Agenten) kommen zu den Tickets hinzu; Häufigkeiten oder Abdeckung prüfen.', 'Zwilling erzeugt weniger Nachfrage als gemessen: Häufigkeiten nicht kalibrierter Typen prüfen, Abdeckung senken.');
-    push('Tickets je Monat', m ? m.perMonth : null, exp.tickets / 12, v => fmtNum(Math.round(v)), 'Zwilling erzeugt mehr Tickets: Stufen in Service Management und Automatisierung im Zwilling vermutlich zu niedrig.', 'Zwilling erzeugt weniger Tickets als gemessen: Stufen im Zwilling zu hoch, oder Anfragen laufen in der Realität ohne Self-Service über Tickets.');
-    push('Ø Lösungszeit', m ? m.mttrHours : null, nW ? durW / nW : 0, v => fmtDur(v), 'Zwilling löst langsamer als gemessen: Stufen zu niedrig angesetzt.', 'Zwilling löst schneller als gemessen: Reifegrad in Service Management oder Automatisierung zu hoch, oder Wartezeiten der Realität (Rückfragen, Warteschlangen, Schichten) sind im Zwilling nicht abgebildet.');
-    push('Ohne menschlichen Eingriff gelöst', m ? m.autoShare : null, nW ? autoN / nW : 0, v => pct(v), 'Zwilling automatisiert mehr als gemessen: Stufe Automatisierung im Zwilling prüfen.', 'Zwilling automatisiert weniger als gemessen: Automationen des Kunden sind in Ticketdaten sichtbar, aber im Zwilling nicht abgebildet.', true);
-    push('Vorab erkannt (aus Monitoring)', m ? m.monitoringShare : null, nW ? prevN / nW : 0, v => pct(v), 'Zwilling erkennt mehr vorab als gemessen: Stufe Telemetrie prüfen.', 'Zwilling erkennt weniger vorab als gemessen: Monitoring des Kunden im Zwilling unterschätzt.', true);
-    if (state.ot) { const oa = it.extra && it.extra.otalarms ? it.extra.otalarms.metrics.downtimeMinPerMonth : null; push('Produktionsstillstand je Monat', oa, exp.ot / 12, v => fmtHours(v), 'Zwilling erzeugt mehr Stillstand: Stufe OT oder Häufigkeiten prüfen.', 'Zwilling erzeugt weniger Stillstand als gemessen: Stillstandsdauern in den OT-Ereignissen zu kurz oder Stufe OT zu hoch.'); }
-    $('#realityTable').innerHTML = '<thead><tr><th>Kennzahl</th><th>Realität (gemessen)</th><th>Zwilling (Erwartung)</th><th>Abweichung</th><th style="text-align:left">Hinweis</th></tr></thead><tbody>' + rows.join('') + '</tbody>';
-    $('#realityTypes').innerHTML = '<thead><tr><th>Ereignistyp</th><th>gemessen je Monat</th><th>Zwilling je Monat</th><th>Abweichung</th><th style="text-align:left">Herkunft</th></tr></thead><tbody>' + perType.map(p => { const v = verdict(p.twin, p.measured); return '<tr><td>' + esc(p.e.title) + '</td><td>' + (p.measured === null ? '–' : fmtNum(p.measured, 1)) + '</td><td>' + fmtNum(p.twin, 1) + '</td><td class="' + v.cls + '">' + v.txt + '</td><td class="hint">' + (p.calibrated ? 'aus Ticketdaten kalibriert' : (p.measured === null ? 'Standardannahme, keine Messung' : 'Messwerte anderer Quellen')) + '</td></tr>'; }).join('') + '</tbody>';
+    // Zwillingsqualität und Kalibrierung
+    const vcls = Q.cls === 'bad' ? 'stop' : Q.cls === 'ok' ? 'ok' : 'warn';
+    $('#twinQuality').innerHTML = '<div class="verdict ' + vcls + '"><b>' + esc(Q.title) + '</b>' + esc(Q.text) + (Q.issues.length ? '<ul>' + Q.issues.map(i => '<li>' + esc(i) + '</li>').join('') + '</ul>' : '') + (Q.missing.length && Q.measured ? '<p class="note" style="margin-top:6px">Ohne Messung: ' + esc(Q.missing.join(', ')) + '.</p>' : '') + '</div>' +
+      '<div><div class="tiles two"><div class="tile"><div class="lbl">Unsicherheit des Zwillings</div><div class="val">' + Math.round(Q.u * 100) + '<small>%</small></div><div class="rng">weitet die Bandbreiten der Prognose, Ersparnis im Business Case um ' + Math.round(haircutOf(Q) * 100) + ' % abgeschlagen</div></div><div class="tile"><div class="lbl">Kalibrierung</div><div class="val" style="font-size:1rem">' + (calibActive() ? 'aktiv' : 'keine') + '</div><div class="rng">' + (calibActive() ? state.calib.log.filter(l => !/nicht angepasst/.test(l.t)).length + ' Faktoren, rücknehmbar' : 'Faktoren aus den Abweichungen ableiten') + '</div></div></div>' +
+      '<div class="actions" style="margin-top:8px">' + (Q.measured ? '<button type="button" class="btn primary" id="calibBtn">' + (calibActive() ? 'Neu kalibrieren' : 'Zwilling automatisch kalibrieren') + '</button>' : '') + (calibActive() ? '<button type="button" class="btn" id="uncalibBtn">Kalibrierung zurücknehmen</button>' : '') + '</div>' +
+      (calibActive() ? '<ul class="pv-list" style="margin-top:8px">' + state.calib.log.map(l => '<li><span class="pv-body"><span class="pv-title">' + esc(l.t) + '</span><span class="pv-sub">' + esc(l.s) + '</span></span></li>').join('') + '</ul>' : '') + '</div>';
+    const cb = $('#calibBtn'); if (cb) cb.addEventListener('click', calibrateTwin);
+    const ub = $('#uncalibBtn'); if (ub) ub.addEventListener('click', uncalibrateTwin);
+    $('#realityTable').innerHTML = '<thead><tr><th>Kennzahl</th><th>Realität (gemessen)</th><th>Zwilling (Erwartung)</th><th>Abweichung</th>' + (calibActive() ? '<th>vor Kalibrierung</th>' : '') + '<th style="text-align:left">Hinweis</th></tr></thead><tbody>' + C.rows.map((r, i) => '<tr><td>' + r.label + '</td><td>' + (r.me === null || r.me === undefined ? '–' : r.fmt(r.me)) + '</td><td>' + r.fmt(r.tw) + '</td><td class="' + r.cls + '">' + r.txt + '</td>' + (calibActive() ? '<td class="' + C.rawRows[i].cls + '">' + C.rawRows[i].txt + '</td>' : '') + '<td class="hint">' + r.hint + '</td></tr>').join('') + '</tbody>';
+    const verdict = C.verdict;
+    $('#realityTypes').innerHTML = '<thead><tr><th>Ereignistyp</th><th>gemessen je Monat</th><th>Zwilling je Monat</th><th>Abweichung</th><th style="text-align:left">Herkunft</th></tr></thead><tbody>' + C.perType.map(p => { const v = verdict(p.twin, p.measured); return '<tr><td>' + esc(p.e.title) + '</td><td>' + (p.measured === null ? '–' : fmtNum(p.measured, 1)) + '</td><td>' + fmtNum(p.twin, 1) + '</td><td class="' + v.cls + '">' + v.txt + '</td><td class="hint">' + (p.calibrated ? 'aus Ticketdaten kalibriert' : (p.measured === null ? 'Standardannahme, keine Messung' : 'Messwerte anderer Quellen')) + '</td></tr>'; }).join('') + '</tbody>';
   }
+  const haircutOf = Q => Math.min(.5, Math.round(Q.u * 0.5 * 100) / 100);
   function startIstbild() {
     const it = state.intake;
     showScreen('istbild', { animate: true });
@@ -1064,7 +1135,7 @@
     const team = it.extra && it.extra.team; it.lanes = team && team.lanes ? team.lanes : null;
     store.set('zt.freq', fo); store.set('zt.params', state.params);
     const pg = $('#paramsGrid'); if (pg) { pg.innerHTML = ''; $('#freqGrid').innerHTML = ''; }
-    it.applied = true; saveIntake(); state.simResult = null;
+    it.applied = true; saveIntake(); state.simResult = null; state.twinAck = null; store.set('zt.twinAck', null);
     applyBase(); state.levels = Object.assign({}, state.base); store.set('zt.levels', state.levels);
     renderPlan(); renderMatrix(); renderProposal(); updateStepper();
     toast('Ist-Bild übernommen: Ausgangslage, Mitarbeiterzahl' + (cal ? ', Häufigkeiten aus ' + it.metrics.tickets + ' Tickets' : '') + (Object.keys(extraCal).length ? ' und ' + Object.keys(extraCal).length + ' Messwerten weiterer Systeme' : '') + ' gesetzt.');
@@ -1197,8 +1268,9 @@
   function metricsOf(levels) {
     const P = state.params, A = window.Analysis;
     const e = A.expected(levels, P);
-    let dur = 0, n = 0, auto = 0; A.variants(levels).forEach(x => { const k = A.perYear(x.e, P); dur += x.v.steps.reduce((s, st) => s + st.d, 0) / 60 * k; n += k; if (x.v.touches === 0 || x.v.prevented) auto += k; });
-    return { minLevel: Math.min.apply(null, FIELDS.map(f => levels[f.id])), tickets: e.tickets, user: e.user, cost: e.cost, mttr: n ? dur / n : 0, auto: n ? auto / n : 0, ot: e.ot, prevented: e.prevented, it: e.it };
+    const c = A.calibration();
+    let dur = 0, n = 0, auto = 0; A.variants(levels).forEach(x => { const k = A.perYear(x.e, P); dur += x.v.steps.reduce((s, st) => s + st.d, 0) / 60 * k * c.dur; n += k; if (x.v.touches === 0 || x.v.prevented) auto += k; });
+    return { minLevel: Math.min.apply(null, FIELDS.map(f => levels[f.id])), tickets: e.tickets, user: e.user, cost: e.cost, mttr: n ? dur / n : 0, auto: n ? Math.max(0, Math.min(1, auto / n + c.auto)) : 0, ot: e.ot, prevented: e.prevented, it: e.it };
   }
   function goalTarget(g, base) {
     const v = state.goals.items[g.id].v;
@@ -1256,6 +1328,8 @@
   }
   function computeSimulation() {
     const G = state.goals, P = state.params, A = window.Analysis;
+    const Q = twinQuality();
+    const gated = Q.cls === 'bad' && state.twinAck !== Q.stamp;
     const start = simStartLevels();
     const base = metricsOf(start);
     const goals = activeGoals().map(g => Object.assign({ g }, goalTarget(g, base)));
@@ -1293,12 +1367,21 @@
     const useFull = !metOnPath && kFull >= 0;
     const pathRoad = useFull ? roadFull : road, pathSch = useFull ? schFull : sch, pathK = useFull ? kFull : (metOnPath ? k : road.steps.length - 1);
     const endLevels = pathK >= 0 ? pathRoad.steps[pathK].levels : start;
-    state.simResult = { start, base, goals: checks, verdict, road: pathRoad, sch: pathSch, k: pathK, endLevels, months: pathK >= 0 ? monthsOf(pathSch, pathK) : 0, invest: pathK >= 0 ? pathRoad.steps[pathK].cumInvest : 0, lanes, budgetPoints, useFull, seenCase: state.simResult ? state.simResult.seenCase : false };
+    const haircut = haircutOf(Q);
+    const reservation = Q.cls === 'ok' ? null : Q.cls === 'none' ? 'Vorbehalt: ' + Q.title + '. ' + Q.text : (Q.cls === 'bad' ? 'Vorbehalt: Fortgesetzt trotz nicht belastbarem Zwilling. ' : 'Vorbehalt: ' + Q.title + '. ') + (Q.issues.length ? Q.issues.join('; ') + '. ' : '') + 'Ersparnis im Business Case um ' + Math.round(haircut * 100) + ' % abgeschlagen, Bandbreiten der Prognose geweitet.';
+    if (reservation) verdict.items = (verdict.items || []).concat([reservation]);
+    state.simResult = { start, base, goals: checks, verdict, road: pathRoad, sch: pathSch, k: pathK, endLevels, months: pathK >= 0 ? monthsOf(pathSch, pathK) : 0, invest: pathK >= 0 ? pathRoad.steps[pathK].cumInvest : 0, lanes, budgetPoints, useFull, quality: Q, gated, haircut, reservation, seenCase: state.simResult ? state.simResult.seenCase : false };
     return state.simResult;
+  }
+  function gateHTML(Q) {
+    return '<div class="verdict stop"><b>Stopp: ' + esc(Q.title) + '</b>' + esc(Q.text) + '<ul>' + Q.issues.map(i => '<li>' + esc(i) + '</li>').join('') + '</ul></div>' +
+      '<div><p class="muted" style="font-size:.9rem">Die Pfadsuche ist ausgesetzt. Ein Zwilling, der die gemessene Realität um mehr als 50 % verfehlt, liefert Dauer, Investition und Ersparnis ohne Aussagekraft.</p><div class="actions" style="margin-top:8px"><button type="button" class="btn primary" data-gate="calib">Zum Digital Twin: kalibrieren oder Quellen ergänzen</button><button type="button" class="btn" data-gate="proceed">Trotzdem fortfahren (wird im Ergebnis vermerkt)</button></div></div>';
   }
   function renderSimulate() {
     const R = computeSimulation(), G = state.goals;
     $('#simTitle').textContent = 'Wie erreicht ' + (state.intake.customer || 'die IT') + ' die Ziele?';
+    $('#simNextBtn').disabled = !!R.gated;
+    if (R.gated) { $('#simVerdict').innerHTML = gateHTML(R.quality); $('#goalTable').innerHTML = ''; $('#simPath').innerHTML = '<li><div class="rt">Pfadsuche ausgesetzt, bis der Zwilling kalibriert oder das Fortfahren bestätigt ist.</div></li>'; $('#simChart').innerHTML = ''; return; }
     $('#simVerdict').innerHTML = '<div class="verdict ' + R.verdict.cls + '"><b>' + esc(R.verdict.title) + '</b>' + esc(R.verdict.text) + (R.verdict.items ? '<ul>' + R.verdict.items.map(i => '<li>' + esc(i) + '</li>').join('') + '</ul>' : '') + '</div>' +
       '<div class="case-kpi"><div class="tile"><div class="lbl">Schritte bis zum Ziel</div><div class="val">' + (R.k + 1) + '</div></div><div class="tile"><div class="lbl">Dauer</div><div class="val">' + Math.round(R.months) + '<small>Monate</small></div></div><div class="tile"><div class="lbl">Investition</div><div class="val" style="font-size:1.05rem">' + fmtEur(R.invest) + '</div></div><div class="tile"><div class="lbl">Arbeitsstränge</div><div class="val">' + R.lanes + '</div></div></div>';
     $('#goalTable').innerHTML = '<thead><tr><th style="text-align:left">Ziel</th><th>Heute</th><th>Zielwert</th><th>Bester Wert auf dem Pfad</th><th>Erreicht</th><th style="text-align:left">Status</th></tr></thead><tbody>' +
@@ -1321,7 +1404,7 @@
       let inv = 0, opex = 0, save = 0;
       steps.forEach(s => { if (Math.floor(s.start) === m) inv += s.invest; if (m >= s.start) opex += s.opex / 12; });
       const done = steps.filter(s => s.end <= m); const costAfter = done.length ? done[done.length - 1].costAfter : startCost;
-      save = (startCost - costAfter) / 12;
+      save = (startCost - costAfter) / 12 * (1 - (R.haircut || 0));
       cum += save - inv - opex;
       if (breakEven === null && cum >= 0 && m > 0 && inv + opex + save > 0 && steps.length) breakEven = m;
       rows.push({ m, inv, opex, save, cum });
@@ -1349,6 +1432,7 @@
   }
   function renderRoadmapCase() {
     const R = state.simResult || computeSimulation(); R.seenCase = true;
+    if (R.gated) { $('#rmTitle').textContent = 'Roadmap und Business Case'; $('#rmSummary').textContent = ''; $('#rmBudgetBox').innerHTML = gateHTML(R.quality); ['#caseTable', '#caseChart', '#argList', '#rmChart', '#rmList'].forEach(s => { $(s).innerHTML = ''; }); state.roadmapText = ''; updateStepper(); return; }
     const G = state.goals, steps = R.sch.steps.slice(0, R.k + 1), last = steps[steps.length - 1];
     const cf = cashflow(R);
     const years = Math.ceil(cf.H / 12);
@@ -1357,7 +1441,7 @@
     const maxYear = Math.max.apply(null, yearRows.map(r => r.inv).concat([0]));
     const inaction = R.road.startCost * (G.horizon / 12);
     $('#rmTitle').textContent = 'Roadmap und Business Case' + (state.intake.customer ? ' für ' + state.intake.customer : '');
-    $('#rmSummary').textContent = (R.verdict.cls === 'stop' ? 'Die Ziele sind in der gewählten Form nicht erreichbar; gezeigt wird der beste Pfad. ' : '') + steps.length + ' Schritte in etwa ' + Math.round(R.months) + ' Monaten, ' + fmtEur(investTotal) + ' Investition, danach ' + fmtEur(savingsFull) + ' Nettoersparnis je Jahr' + (cf.breakEven !== null ? ', Break-even nach ' + cf.breakEven + ' Monaten.' : '.') + ' Kosten des Nichtstuns über ' + G.horizon + ' Monate: ' + fmtEur(inaction) + '.';
+    $('#rmSummary').textContent = (R.verdict.cls === 'stop' ? 'Die Ziele sind in der gewählten Form nicht erreichbar; gezeigt wird der beste Pfad. ' : '') + steps.length + ' Schritte in etwa ' + Math.round(R.months) + ' Monaten, ' + fmtEur(investTotal) + ' Investition, danach ' + fmtEur(savingsFull) + ' Nettoersparnis je Jahr' + (cf.breakEven !== null ? ', Break-even nach ' + cf.breakEven + ' Monaten.' : '.') + ' Kosten des Nichtstuns über ' + G.horizon + ' Monate: ' + fmtEur(inaction) + '.' + (R.haircut ? ' Ersparnis um ' + Math.round(R.haircut * 100) + ' % abgeschlagen (Unsicherheit des Zwillings ' + Math.round(R.quality.u * 100) + ' %).' : '');
     const gap = G.budgetMode === 'available' ? investTotal - G.budget : investTotal;
     $('#rmBudgetBox').innerHTML = '<div><div class="eyebrow" style="margin-bottom:6px">' + (G.budgetMode === 'available' ? 'Budgetabgleich' : 'Budgetbedarf für den Antrag') + '</div>' +
       '<div class="hero-num" style="font-size:2rem">' + fmtEur(investTotal) + '<small style="display:block;margin:4px 0 0;font-size:.8rem">Investition gesamt · höchstens ' + fmtEur(maxYear) + ' in einem Jahr' + (G.budgetMode === 'available' ? ' · verfügbar ' + fmtEur(G.budget) : '') + '</small></div></div>' +
@@ -1372,6 +1456,7 @@
     if (prevGain > 0) args.push({ t: 'Risiko und Resilienz', s: 'Jährlich ' + fmtNum(Math.round(prevGain)) + ' Vorfälle mehr werden verhindert oder ohne menschlichen Eingriff gelöst, darunter Sicherheitsvorfälle und Ausfälle, die heute Stunden kosten.' });
     const okGoals = R.goals.filter(c => c.metAt >= 0 || c.okNow || (R.useFull && c.metAtFull >= 0)); if (okGoals.length) args.push({ t: 'Strategische Ziele', s: okGoals.map(c => c.g.name.replace(' um', '').replace(' mindestens', '').replace(' höchstens', '') + ' (' + c.fmt(c.target) + ')').join(', ') + ' werden erreicht, in etwa ' + Math.round(R.months) + ' Monaten.' });
     args.push({ t: 'Planbarkeit', s: 'Die Investition verteilt sich auf ' + years + ' Jahre mit höchstens ' + fmtEur(maxYear) + ' in einem Jahr, in ' + R.lanes + ' parallelen Arbeitssträngen' + (state.intake.applied && state.intake.lanes ? ' passend zur Teamgröße' : '') + '. Jeder Schritt hat ein Erfolgskriterium und lässt sich einzeln beauftragen.' });
+    if (R.reservation) args.push({ t: 'Vorbehalt', s: R.reservation });
     if (G.budgetMode !== 'available') args.push({ t: 'Budgetantrag', s: 'Beantragt werden ' + fmtEur(investTotal) + ' einmalig und ' + fmtEur(steps.reduce((s, st) => s + st.opex, 0)) + ' je Jahr laufend. Gegenwert: ' + fmtEur(savingsFull) + ' je Jahr ab Abschluss, kumuliert ' + fmtEur(cf.rows[cf.rows.length - 1].cum) + ' nach ' + cf.H + ' Monaten.' });
     $('#argH').textContent = G.budgetMode === 'available' ? 'Warum es sich lohnt' : 'Warum es sich lohnt: Argumentation für den Budgetantrag';
     $('#argList').innerHTML = args.map(x => '<li><span class="pv-body"><span class="pv-title">' + esc(x.t) + '</span><span class="pv-sub">' + esc(x.s) + '</span></span></li>').join('');
@@ -1384,7 +1469,8 @@
     const G = state.goals, steps = R.sch.steps.slice(0, R.k + 1);
     let t = 'Zero-Touch IT Simulator – Management-Zusammenfassung' + (state.intake.customer ? ' für ' + state.intake.customer : '') + '\n\n';
     t += 'Ziele (' + G.horizon + ' Monate): ' + R.goals.map(c => c.g.name + ' ' + c.fmt(c.target)).join('; ') + '\n';
-    t += 'Ergebnis: ' + R.verdict.title + '. ' + R.verdict.text + '\n\n';
+    t += 'Ergebnis: ' + R.verdict.title + '. ' + R.verdict.text + '\n';
+    t += 'Zwilling: ' + R.quality.title + ' (Unsicherheit ' + Math.round(R.quality.u * 100) + ' %' + (R.haircut ? ', Ersparnis um ' + Math.round(R.haircut * 100) + ' % abgeschlagen' : '') + ').' + (R.reservation ? ' ' + R.reservation : '') + '\n\n';
     t += 'Roadmap (' + steps.length + ' Schritte, etwa ' + Math.round(R.months) + ' Monate):\n';
     steps.forEach((s, i) => { t += '  ' + (i + 1) + '. ' + s.field.name + ' auf Stufe ' + s.stage + ' (' + s.title + '), Monat ' + Math.round(s.start) + ' bis ' + Math.round(s.end) + ', ' + fmtEur(s.invest) + '\n'; });
     t += '\nBusiness Case je Jahr:\n';
@@ -1415,6 +1501,7 @@
         if (s === 'result' && !state.evaluated) return;
         showScreen(s); return;
       }
+      const gt = t.closest('[data-gate]'); if (gt) { if (gt.dataset.gate === 'calib') { showScreen('istbild'); } else { const Q = state.twinQuality || twinQuality(); state.twinAck = Q.stamp; store.set('zt.twinAck', Q.stamp); state.simResult = null; if (state.screen === 'roadmap') renderRoadmapCase(); else renderSimulate(); toast('Fortgesetzt trotz nicht belastbarem Zwilling. Der Vorbehalt steht im Urteil und in der Zusammenfassung.'); } return; }
       const hz = t.closest('[data-horizon]'); if (hz) { state.goals.horizon = parseInt(hz.dataset.horizon, 10); state.goals.touched = true; saveGoals(); state.simResult = null; renderGoals(); return; }
       const bm = t.closest('[data-bmode]'); if (bm) { state.goals.budgetMode = bm.dataset.bmode; state.goals.touched = true; saveGoals(); state.simResult = null; renderGoals(); return; }
       const bs = t.closest('[data-base]'); if (bs && !bs.disabled) { state.useAssessment = bs.dataset.base === 'assess'; store.set('zt.useAssessment', state.useAssessment); applyBase(); renderPlan(); return; }
@@ -1508,6 +1595,7 @@
     const th = store.get('zt.theme', ''); if (th) applyTheme(th);
     if (savedLevels) FIELDS.forEach(f => { if (savedLevels[f.id]) state.levels[f.id] = savedLevels[f.id]; });
     applyBase();
+    window.Analysis.setCalibration(state.calib && state.calib.on ? state.calib.f : null);
     let ok = false;
     if (window.THREE) { try { window.Scene3D.init($('#c3d')); ok = true; } catch (e) { console.error(e); } }
     if (!ok) { $('#webglWarn').hidden = false; const noop = () => {}; window.Scene3D = new Proxy({}, { get: () => noop }); }

@@ -747,6 +747,11 @@ code { font-family: var(--font-mono); font-size: .78em; background: var(--surfac
 .verdict ul { margin: 6px 0 0; padding-left: 18px; font-size: .84rem; }
 .road li.goal-hit .rn { background: var(--agent); color: #fff; }
 .case-kpi { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+.tiles.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.tiles.two .tile { background: var(--surface); }
+.tiles.two .tile .rng { font-size: .72rem; color: var(--fg-3); margin-top: 2px; }
+#twinQuality { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+@media (max-width: 760px) { #twinQuality { grid-template-columns: 1fr; } }
 #simVerdict, #rmBudgetBox { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; align-items: start; }
 #simVerdict .case-kpi, #rmBudgetBox .case-kpi { margin-top: 0; }
 @media (max-width: 760px) { #simVerdict, #rmBudgetBox { grid-template-columns: 1fr; } }
