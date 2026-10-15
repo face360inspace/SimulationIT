@@ -1287,7 +1287,7 @@
   function activeGoals() { return GOAL_DEFS.filter(g => (!g.ot || state.ot) && state.goals.items[g.id].on); }
   function renderGoals() {
     const G = state.goals;
-    $('#horizonSeg').innerHTML = [12, 24, 36, 48, 60].map(m => '<button type="button" data-horizon="' + m + '" aria-pressed="' + (G.horizon === m) + '"><span class="n">' + m + '</span><span class="lbl">Monate</span></button>').join('');
+    $('#horizonSeg').innerHTML = [12, 24, 36, 48, 60].map(m => '<button type="button" data-horizon="' + m + '" aria-pressed="' + (G.horizon === m) + '"><span class="n">' + m + '</span><span class="lbl">Monate</span></button>').join('') + '<button type="button" data-horizon="0" aria-pressed="' + (!G.horizon) + '"><span class="lbl">Ohne Vorgabe</span></button>';
     $$('#budgetModeSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.bmode === G.budgetMode));
     $('#budgetAmountRow').hidden = G.budgetMode !== 'available';
     $('#goalBudget').value = G.budget;
@@ -1306,7 +1306,7 @@
   }
   function renderGoalsSummary() {
     const G = state.goals, n = activeGoals().length;
-    $('#goalsSummary').textContent = n + ' Ziele aktiv · ' + G.horizon + ' Monate · ' + (G.budgetMode === 'available' ? 'Budget ' + fmtEur(G.budget) : 'Budget wird ermittelt');
+    $('#goalsSummary').textContent = n + ' Ziele aktiv · ' + (G.horizon ? G.horizon + ' Monate' : 'ohne Zeitvorgabe') + ' · ' + (G.budgetMode === 'available' ? 'Budget ' + fmtEur(G.budget) : 'Budget wird ermittelt');
   }
 
   /* ---------- Simulation: Pfadsuche mit Zielprüfung ---------- */
@@ -1360,9 +1360,9 @@
     const monthsFull = monthsOf(schFull, kFull), investFull = kFull >= 0 ? roadFull.steps[kFull].cumInvest : 0;
     if (!goals.length) verdict = { cls: 'warn', title: 'Keine Ziele aktiv', text: 'Schalten Sie in Schritt 1 mindestens ein Ziel ein. Gezeigt wird der Pfad mit dem höchsten Nettonutzen.' };
     else if (checks.some(c => !c.feasibleFull)) verdict = { cls: 'stop', title: 'Stopp: Ziele so nicht erreichbar', text: 'Auch mit vollem Ausbau aller Handlungsfelder auf Stufe 5 werden nicht alle Ziele erreicht.', items: checks.filter(c => !c.feasibleFull).map(c => c.g.name + ': bestenfalls ' + c.fmt(c.bestFull) + ' statt ' + c.fmt(c.target) + '. Ziel anpassen oder Annahmen prüfen.') };
-    else if (metOnPath && monthsK <= G.horizon) verdict = { cls: 'ok', title: 'Ziele erreichbar in ' + Math.round(monthsK) + ' Monaten', text: k + 1 + ' Schritte, ' + fmtEur(investK) + ' Investition' + (G.budgetMode === 'available' ? ' von ' + fmtEur(G.budget) + ' verfügbar' : '') + ', innerhalb des Horizonts von ' + G.horizon + ' Monaten.' };
+    else if (metOnPath && (!G.horizon || monthsK <= G.horizon)) verdict = { cls: 'ok', title: 'Ziele erreichbar in ' + Math.round(monthsK) + ' Monaten', text: k + 1 + ' Schritte, ' + fmtEur(investK) + ' Investition' + (G.budgetMode === 'available' ? ' von ' + fmtEur(G.budget) + ' verfügbar' : '') + (G.horizon ? ', innerhalb des Horizonts von ' + G.horizon + ' Monaten.' : '. Die Dauer folgt aus Voraussetzungen, Wartungsfenstern und Arbeitssträngen; ein Zeithorizont ist nicht vorgegeben.') };
     else if (metOnPath) verdict = { cls: 'warn', title: 'Erreichbar, aber erst nach ' + Math.round(monthsK) + ' Monaten', text: 'Der Horizont von ' + G.horizon + ' Monaten reicht nicht. ' + (k + 1) + ' Schritte, ' + fmtEur(investK) + ' Investition.', items: ['Horizont auf ' + Math.ceil(monthsK / 12) * 12 + ' Monate verlängern', 'Mehr parallele Arbeitsstränge (Teamkapazität oder Partner) einplanen', 'Ziele mit langer Vorlaufzeit (Stufe 5, Organisation) zurückstellen'] };
-    else if (kFull >= 0) verdict = { cls: 'warn', title: 'Budget reicht nicht' + (monthsFull > G.horizon ? ', Horizont ebenfalls nicht' : ''), text: 'Mit ' + fmtEur(G.budget) + ' endet der Pfad vor dem Ziel. Nötig sind ' + fmtEur(investFull) + ' (' + (kFull + 1) + ' Schritte, etwa ' + Math.round(monthsFull) + ' Monate). Lücke: ' + fmtEur(Math.max(0, investFull - G.budget)) + '.' + (monthsFull > G.horizon ? ' Der Pfad braucht ' + Math.round(monthsFull) + ' Monate, der Horizont erlaubt ' + G.horizon + '.' : ''), items: ['Budgetantrag über die Lücke, Argumentation in Schritt 5', 'Ziele reduzieren, die der Pfad zuletzt erreicht', 'Budget auf mehrere Jahre strecken (Investition je Jahr begrenzen)'].concat(monthsFull > G.horizon ? ['Horizont auf ' + Math.ceil(monthsFull / 12) * 12 + ' Monate verlängern oder mehr parallele Arbeitsstränge einplanen'] : []) };
+    else if (kFull >= 0) verdict = { cls: 'warn', title: 'Budget reicht nicht' + (G.horizon && monthsFull > G.horizon ? ', Horizont ebenfalls nicht' : ''), text: 'Mit ' + fmtEur(G.budget) + ' endet der Pfad vor dem Ziel. Nötig sind ' + fmtEur(investFull) + ' (' + (kFull + 1) + ' Schritte, etwa ' + Math.round(monthsFull) + ' Monate). Lücke: ' + fmtEur(Math.max(0, investFull - G.budget)) + '.' + (G.horizon && monthsFull > G.horizon ? ' Der Pfad braucht ' + Math.round(monthsFull) + ' Monate, der Horizont erlaubt ' + G.horizon + '.' : ''), items: ['Budgetantrag über die Lücke, Argumentation in Schritt 5', 'Ziele reduzieren, die der Pfad zuletzt erreicht', 'Budget auf mehrere Jahre strecken (Investition je Jahr begrenzen)'].concat(G.horizon && monthsFull > G.horizon ? ['Horizont auf ' + Math.ceil(monthsFull / 12) * 12 + ' Monate verlängern oder mehr parallele Arbeitsstränge einplanen'] : []) };
     else verdict = { cls: 'stop', title: 'Stopp: Ziele auf keinem Pfad erreichbar', text: 'Der Optimierer findet keinen Pfad, auf dem alle Ziele zugleich erreicht werden. Ziele einzeln prüfen und entschärfen.', items: checks.filter(c => c.metAtFull < 0).map(c => c.g.name + ': bestenfalls ' + c.fmt(c.bestOnPath)) };
     const useFull = !metOnPath && kFull >= 0;
     const pathRoad = useFull ? roadFull : road, pathSch = useFull ? schFull : sch, pathK = useFull ? kFull : (metOnPath ? k : road.steps.length - 1);
@@ -1398,7 +1398,7 @@
   /* ---------- Roadmap und Business Case ---------- */
   function cashflow(R) {
     const steps = R.sch.steps.slice(0, R.k + 1), startCost = R.road.startCost;
-    const H = Math.max(state.goals.horizon, Math.ceil(R.months) + 1, 12);
+    const H = state.goals.horizon ? Math.max(state.goals.horizon, Math.ceil(R.months) + 1, 12) : Math.max(Math.ceil((R.months + 12) / 12) * 12, 36);
     const rows = []; let cum = 0, breakEven = null;
     for (let m = 0; m < H; m++) {
       let inv = 0, opex = 0, save = 0;
@@ -1439,9 +1439,9 @@
     const yearRows = []; for (let yy = 0; yy < years; yy++) { const rs = cf.rows.slice(yy * 12, yy * 12 + 12); yearRows.push({ y: yy + 1, inv: rs.reduce((s, r) => s + r.inv, 0), opex: rs.reduce((s, r) => s + r.opex, 0), save: rs.reduce((s, r) => s + r.save, 0), cum: rs.length ? rs[rs.length - 1].cum : 0 }); }
     const investTotal = steps.reduce((s, st) => s + st.invest, 0), savingsFull = last ? last.cumNet : 0;
     const maxYear = Math.max.apply(null, yearRows.map(r => r.inv).concat([0]));
-    const inaction = R.road.startCost * (G.horizon / 12);
+    const hz = G.horizon || cf.H; const inaction = R.road.startCost * (hz / 12);
     $('#rmTitle').textContent = 'Roadmap und Business Case' + (state.intake.customer ? ' für ' + state.intake.customer : '');
-    $('#rmSummary').textContent = (R.verdict.cls === 'stop' ? 'Die Ziele sind in der gewählten Form nicht erreichbar; gezeigt wird der beste Pfad. ' : '') + steps.length + ' Schritte in etwa ' + Math.round(R.months) + ' Monaten, ' + fmtEur(investTotal) + ' Investition, danach ' + fmtEur(savingsFull) + ' Nettoersparnis je Jahr' + (cf.breakEven !== null ? ', Break-even nach ' + cf.breakEven + ' Monaten.' : '.') + ' Kosten des Nichtstuns über ' + G.horizon + ' Monate: ' + fmtEur(inaction) + '.' + (R.haircut ? ' Ersparnis um ' + Math.round(R.haircut * 100) + ' % abgeschlagen (Unsicherheit des Zwillings ' + Math.round(R.quality.u * 100) + ' %).' : '');
+    $('#rmSummary').textContent = (R.verdict.cls === 'stop' ? 'Die Ziele sind in der gewählten Form nicht erreichbar; gezeigt wird der beste Pfad. ' : '') + steps.length + ' Schritte in etwa ' + Math.round(R.months) + ' Monaten, ' + fmtEur(investTotal) + ' Investition, danach ' + fmtEur(savingsFull) + ' Nettoersparnis je Jahr' + (cf.breakEven !== null ? ', Break-even nach ' + cf.breakEven + ' Monaten.' : '.') + ' Kosten des Nichtstuns über ' + hz + ' Monate: ' + fmtEur(inaction) + '.' + (R.haircut ? ' Ersparnis um ' + Math.round(R.haircut * 100) + ' % abgeschlagen (Unsicherheit des Zwillings ' + Math.round(R.quality.u * 100) + ' %).' : '');
     const gap = G.budgetMode === 'available' ? investTotal - G.budget : investTotal;
     $('#rmBudgetBox').innerHTML = '<div><div class="eyebrow" style="margin-bottom:6px">' + (G.budgetMode === 'available' ? 'Budgetabgleich' : 'Budgetbedarf für den Antrag') + '</div>' +
       '<div class="hero-num" style="font-size:2rem">' + fmtEur(investTotal) + '<small style="display:block;margin:4px 0 0;font-size:.8rem">Investition gesamt · höchstens ' + fmtEur(maxYear) + ' in einem Jahr' + (G.budgetMode === 'available' ? ' · verfügbar ' + fmtEur(G.budget) : '') + '</small></div></div>' +
@@ -1451,7 +1451,7 @@
     const args = [];
     const prevGain = metricsOf(R.endLevels).prevented - R.base.prevented;
     args.push({ t: 'Wirtschaftlichkeit', s: 'Nach Abschluss sinken die jährlichen Kosten um ' + fmtEur(savingsFull) + ' netto, von ' + fmtEur(R.road.startCost) + ' auf ' + fmtEur(last ? last.costAfter : R.road.startCost) + '. ' + (cf.breakEven !== null ? 'Die Investition ist nach ' + cf.breakEven + ' Monaten zurückverdient.' : 'Die Amortisation liegt außerhalb des Horizonts.') });
-    args.push({ t: 'Kosten des Nichtstuns', s: 'Ohne Veränderung kostet der heutige Betrieb über ' + G.horizon + ' Monate ' + fmtEur(inaction) + ' an IT-Aufwand, Ausfallzeit' + (state.ot ? ', Produktionsstillstand' : '') + ' und Ticketbearbeitung.' });
+    args.push({ t: 'Kosten des Nichtstuns', s: 'Ohne Veränderung kostet der heutige Betrieb über ' + hz + ' Monate ' + fmtEur(inaction) + ' an IT-Aufwand, Ausfallzeit' + (state.ot ? ', Produktionsstillstand' : '') + ' und Ticketbearbeitung.' });
     const qw = steps.find(s => s.payback <= 12 && s.stepSaving > 0); if (qw) args.push({ t: 'Schnell sichtbar', s: 'Schritt ' + (steps.indexOf(qw) + 1) + ' (' + qw.field.name + ' auf Stufe ' + qw.stage + ') zahlt sich innerhalb eines Jahres aus und finanziert die weiteren Schritte mit.' });
     if (prevGain > 0) args.push({ t: 'Risiko und Resilienz', s: 'Jährlich ' + fmtNum(Math.round(prevGain)) + ' Vorfälle mehr werden verhindert oder ohne menschlichen Eingriff gelöst, darunter Sicherheitsvorfälle und Ausfälle, die heute Stunden kosten.' });
     const okGoals = R.goals.filter(c => c.metAt >= 0 || c.okNow || (R.useFull && c.metAtFull >= 0)); if (okGoals.length) args.push({ t: 'Strategische Ziele', s: okGoals.map(c => c.g.name.replace(' um', '').replace(' mindestens', '').replace(' höchstens', '') + ' (' + c.fmt(c.target) + ')').join(', ') + ' werden erreicht, in etwa ' + Math.round(R.months) + ' Monaten.' });
@@ -1468,7 +1468,7 @@
   function buildSummaryText(R, cf, yearRows, args) {
     const G = state.goals, steps = R.sch.steps.slice(0, R.k + 1);
     let t = 'Zero-Touch IT Simulator – Management-Zusammenfassung' + (state.intake.customer ? ' für ' + state.intake.customer : '') + '\n\n';
-    t += 'Ziele (' + G.horizon + ' Monate): ' + R.goals.map(c => c.g.name + ' ' + c.fmt(c.target)).join('; ') + '\n';
+    t += 'Ziele (' + (G.horizon ? G.horizon + ' Monate' : 'ohne Zeitvorgabe') + '): ' + R.goals.map(c => c.g.name + ' ' + c.fmt(c.target)).join('; ') + '\n';
     t += 'Ergebnis: ' + R.verdict.title + '. ' + R.verdict.text + '\n';
     t += 'Zwilling: ' + R.quality.title + ' (Unsicherheit ' + Math.round(R.quality.u * 100) + ' %' + (R.haircut ? ', Ersparnis um ' + Math.round(R.haircut * 100) + ' % abgeschlagen' : '') + ').' + (R.reservation ? ' ' + R.reservation : '') + '\n\n';
     t += 'Roadmap (' + steps.length + ' Schritte, etwa ' + Math.round(R.months) + ' Monate):\n';
