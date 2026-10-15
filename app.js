@@ -507,11 +507,14 @@
     const TOTALS = totalsByLevel();
     const lv = state.levelView;
     $('#ladder').innerHTML = LEVELS.map(l => '<button type="button" data-levelview="' + l.n + '" aria-pressed="' + (l.n === lv) + '" class="' + (l.n < lv ? 'reached' : '') + '"><span class="n">Stufe ' + l.n + '</span><span class="name">' + l.name + '</span><span class="tag">' + l.tagline + '</span></button>').join('');
-    const l = LEVELS[lv - 1], q = PERSPECTIVES[lv];
+    const l = LEVELS[lv - 1], q = PERSPECTIVES[lv], B = BUSINESS[lv];
+    $('#bizMatrix').innerHTML = '<thead><tr><th style="text-align:left"></th>' + LEVELS.map(x => '<th class="' + (x.n === lv ? 'cur' : '') + '">' + x.n + ' ' + x.name + '</th>').join('') + '</tr></thead><tbody>' + BUSINESS_COMPARE.map(r => '<tr><td style="text-align:left"><b>' + r.label + '</b></td>' + r.v.map((v, i) => '<td class="' + (i + 1 === lv ? 'cur' : '') + '">' + v + '</td>').join('') + '</tr>').join('') + '</tbody>';
     $('#levelDetail').innerHTML = '<div class="eyebrow">Stufe ' + l.n + '</div><h2 style="margin:4px 0 8px">' + l.name + ' · ' + l.tagline + '</h2><p class="muted">' + esc(l.desc) + '</p>' +
       '<p style="margin-top:10px"><b>Rollenverteilung:</b> ' + esc(l.role) + '</p>' +
       '<div class="kpis">' + Object.keys(KPI_LABELS).map(k => '<div class="tile"><div class="lbl">' + KPI_LABELS[k] + '</div><div class="val">' + l.kpi[k] + '</div></div>').join('') + '</div>' +
       '<p class="note" style="margin-top:8px">Typische Richtwerte zur Orientierung, keine Benchmarks.</p>' +
+      '<h3 style="margin-top:18px">Was die Stufe für das Unternehmen bedeutet</h3><div class="biz-grid">' + Object.keys(BUSINESS_LABELS).map(k => '<div class="biz"><div class="lbl">' + BUSINESS_LABELS[k] + '</div><p>' + esc(B[k]) + '</p></div>').join('') + '</div>' +
+      '<div class="biz-next"><div><div class="lbl">' + (lv < 5 ? 'Der Weg zu Stufe ' + (lv + 1) : 'Die Stufe halten') + '</div><p>' + esc(B.next) + '</p></div>' + (B.stay ? '<div><div class="lbl">Kosten des Verharrens</div><p>' + esc(B.stay) + '</p></div>' : '') + '</div>' +
       '<h3 style="margin-top:18px">So fühlt sich diese Stufe an</h3><div class="quotes" style="margin-top:8px">' + ['ma', 'it', 'mgmt'].map(k => '<div class="quote"><div class="who">' + PERSPECTIVE_LABELS[k] + '</div><p>„' + esc(q[k]) + '“</p></div>').join('') + '</div>' +
       '<div class="actions"><button class="btn primary" type="button" data-play-level="' + lv + '">Alle Felder auf Stufe ' + lv + ' in die Planung übernehmen</button></div>';
     const series = [{ k: 'it', cap: 'IT-Aufwand in Stunden', unit: 'h' }, { k: 'user', cap: 'Ausfallzeit der Mitarbeiter in Stunden', unit: 'h' }, { k: 'tickets', cap: 'Tickets', unit: 'Tickets' }];
@@ -1324,7 +1327,7 @@
         const lv = LEVELS[Math.max(1, Math.min(5, Math.round(it.v))) - 1];
         return '<div class="goal wide' + (it.on ? '' : ' off') + '"><div class="gh"><b>' + g.name + '</b><label class="switch"><input type="checkbox" data-goal-on="' + g.id + '"' + (it.on ? ' checked' : '') + '><span></span></label></div>' +
           '<div class="segments wrap" role="group" aria-label="Zielstufe">' + LEVELS.filter(l => l.n >= 2).map(l => '<button type="button" data-goal-level="' + l.n + '" aria-pressed="' + (l.n === it.v) + '"><span class="n">' + l.n + '</span><span class="lbl">' + l.name + '</span></button>').join('') + '</div>' +
-          '<div class="level-expl"><b>Stufe ' + lv.n + ' · ' + lv.name + ': ' + esc(lv.tagline) + '</b><p>' + esc(lv.desc) + '</p><p class="kpi">Richtwerte: ohne menschlichen Eingriff ' + lv.kpi.auto + ' · Tickets je 100 Mitarbeiter und Monat ' + lv.kpi.tickets + ' · Lösungszeit ' + lv.kpi.mttr + ' · vorab erkannt ' + lv.kpi.proactive + '</p><p>' + esc(lv.role) + ' ' + g.note + '</p><button type="button" class="btn small" data-goal-levels="' + lv.n + '">Alle Reifegrade im Detail</button></div>' +
+          '<div class="level-expl"><b>Stufe ' + lv.n + ' · ' + lv.name + ': ' + esc(lv.tagline) + '</b><p>' + esc(lv.desc) + '</p><p><b style="font-size:.82rem">Für das Unternehmen:</b> ' + esc(BUSINESS[lv.n].future) + '</p><p class="kpi">Richtwerte: ohne menschlichen Eingriff ' + lv.kpi.auto + ' · Tickets je 100 Mitarbeiter und Monat ' + lv.kpi.tickets + ' · Lösungszeit ' + lv.kpi.mttr + ' · vorab erkannt ' + lv.kpi.proactive + '</p><p>' + esc(lv.role) + ' ' + g.note + '</p><button type="button" class="btn small" data-goal-levels="' + lv.n + '">Alle Reifegrade im Detail</button></div>' +
           (t ? '<div class="gnote twin">Aus dem Digital Twin: heute ' + t.fmt(t.cur(base)) + ', Zielwert ' + t.fmt(t.target) + '.</div>' : '') + '</div>';
       }
       return '<div class="goal' + (it.on ? '' : ' off') + '"><div class="gh"><b>' + g.name + '</b><label class="switch"><input type="checkbox" data-goal-on="' + g.id + '"' + (it.on ? ' checked' : '') + '><span></span></label></div>' +

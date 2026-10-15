@@ -59,6 +59,61 @@ const LEVELS = [
   }
 ];
 
+/* Business- und Transformationssicht je Stufe: was die Stufe für die Zukunftsfähigkeit des Unternehmens bedeutet
+   und was der Schritt zur nächsten Stufe von Organisation und Führung verlangt. */
+const BUSINESS = {
+  1: {
+    future: 'Jede Veränderung im Geschäft (neuer Standort, Zukauf, neues Produkt) wird zum IT-Projekt mit ungewissem Ausgang. Digitale Vorhaben warten, weil der Betrieb alle Kapazität bindet.',
+    resilience: 'Ausfälle und Sicherheitsvorfälle werden spät erkannt; Dauer und Schaden hängen davon ab, wer gerade erreichbar ist.',
+    cost: 'Kosten wachsen linear mit Mitarbeitern und Geräten; Ausfallzeit und Schattenkosten erscheinen in keiner Rechnung.',
+    talent: 'Gute Fachkräfte verlassen den Dauerstörungsbetrieb; Wissen geht mit ihnen.',
+    next: 'Standardisieren: ein Ticketsystem, ein Servicekatalog, ein Inventar, dokumentierte Abläufe. Führung schafft den Rahmen und schützt die Zeit dafür vor dem Tagesgeschäft.',
+    stay: 'Wer hier bleibt, trägt bei jedem Wachstumsschritt und jedem Sicherheitsvorfall das volle Risiko und kann digitale Geschäftsmodelle nicht ernsthaft verfolgen.'
+  },
+  2: {
+    future: 'Veränderungen sind planbar, aber langsam: Jedes Vorhaben durchläuft Menschen und Formulare. Wachstum heißt mehr Personal.',
+    resilience: 'Störungen werden erfasst und nach SLA bearbeitet; Wiederholungsfehler sind sichtbar, bleiben aber oft bestehen.',
+    cost: 'Kosten sind transparent und planbar, die Kosten je Mitarbeiter sinken kaum.',
+    talent: 'Verlässliche Abläufe, wenig Gestaltungsspielraum; Automatisierungstalente finden kaum Raum.',
+    next: 'Automatisieren: Standardanfragen als Workflow, Geräte, Identitäten und Patches ohne Handarbeit. Die Organisation braucht Produktverantwortung für Automationen und die Bereitschaft, Ausnahmen als Ausnahmen zu behandeln statt jeden Einzelfall von Hand zu lösen.',
+    stay: 'Wer hier bleibt, zahlt jede Wachstumsstufe mit Personal und verliert Tempo gegenüber Wettbewerbern, deren Standardbetrieb von selbst läuft.'
+  },
+  3: {
+    future: 'Standardbetrieb skaliert ohne zusätzliches Personal; neue Standorte, Zukäufe und Einstellungswellen laufen nach Vorlage. Kapazität wird frei für digitale Vorhaben.',
+    resilience: 'Bekannte Fehlerbilder werden automatisch behoben; unbekannte Störungen brauchen weiterhin Menschen und Zeit.',
+    cost: 'Kosten entkoppeln sich von der Zahl der Mitarbeiter; Investitionen fließen in Plattformen statt in Stellen.',
+    talent: 'Die IT wird als Gestalterin wahrgenommen; Engineering-Profile finden sinnvolle Arbeit, Service-Desk-Rollen wandeln sich.',
+    next: 'Proaktiv werden: Telemetrie zusammenführen, Ursachen korrelieren, Probleme vor der Meldung beheben. Das verlangt Datenkompetenz, Vertrauen in Vorhersagen und Freigaben, die in Minuten statt Wochen entscheiden.',
+    stay: 'Wer hier bleibt, arbeitet effizient, aber weiterhin nach dem Ereignis; Ausfallzeit und Sicherheitsrisiken bleiben spürbar, und die Datenbasis für KI im Kerngeschäft fehlt.'
+  },
+  4: {
+    future: 'Das Unternehmen nimmt Veränderungen schneller auf, als der Markt sie verlangt: Technik ist kein Engpass mehr für neue Geschäftsmodelle; Datenbasis und Automationsgrad tragen KI im Kerngeschäft.',
+    resilience: 'Die meisten Störungen enden, bevor jemand sie bemerkt; Sicherheitsvorfälle werden in Minuten eingedämmt. Ausfallzeit wird zur Ausnahme.',
+    cost: 'Betriebskosten sinken bei wachsender Nutzung; der Wert zeigt sich in Produktivität und vermiedenen Ausfällen.',
+    talent: 'Arbeit an Modellen, Daten und Leitplanken zieht Fachkräfte an; die IT gilt als attraktiver Arbeitgeber.',
+    next: 'Autonom werden: Agenten entscheiden und handeln innerhalb von Policies. Nötig sind Governance für Agenten, klare Verantwortungs- und Eskalationsregeln und eine Führung, die Verantwortung in Regeln statt in Einzelfreigaben legt.',
+    stay: 'Wer hier bleibt, hat eine starke Position; der Schritt zu Stufe 5 lohnt dort, wo Geschwindigkeit und Verfügbarkeit den Wettbewerb entscheiden.'
+  },
+  5: {
+    future: 'Die IT ist unsichtbare Infrastruktur wie Strom: Jede strategische Entscheidung lässt sich technisch sofort umsetzen. Das Unternehmen experimentiert, skaliert und integriert in Wochen statt Jahren.',
+    resilience: 'Systeme heilen sich selbst, Angriffe werden autonom eingedämmt; Menschen bearbeiten nur, was neu ist.',
+    cost: 'Kosten folgen dem Geschäftsnutzen statt der Störungszahl; der IT-Haushalt wird zum Innovationsbudget.',
+    talent: 'Wenige, hochqualifizierte Rollen gestalten Policies, Architektur und Ethik der Automation.',
+    next: 'Halten und weiterentwickeln: Leitplanken regelmäßig prüfen, Agenten auditieren, Fähigkeiten aufbauen, bevor die Technik sie verlangt.',
+    stay: ''
+  }
+};
+const BUSINESS_LABELS = { future: 'Zukunftsfähigkeit', resilience: 'Resilienz und Sicherheit', cost: 'Kostenstruktur', talent: 'Fachkräfte' };
+/* Kompaktvergleich über alle Stufen, je Zeile eine Geschäftsfrage. */
+const BUSINESS_COMPARE = [
+  { label: 'Veränderung umsetzen', v: ['Projekt mit ungewissem Ausgang', 'planbar, langsam', 'nach Vorlage', 'schneller als der Markt', 'sofort umsetzbar'] },
+  { label: 'Wachstum skalieren', v: ['nur mit Personal', 'mit Personal', 'ohne zusätzliches Personal', 'bei sinkenden Kosten', 'nach Geschäftsnutzen'] },
+  { label: 'Ausfall und Angriff', v: ['spät erkannt', 'erfasst, nach SLA', 'Bekanntes automatisch', 'meist vor der Meldung', 'selbstheilend'] },
+  { label: 'Kostenstruktur', v: ['linear, verdeckt', 'transparent, linear', 'entkoppelt', 'sinkend', 'Innovationsbudget'] },
+  { label: 'Fachkräfte', v: ['Abwanderung', 'verlässlich, eng', 'Gestalter', 'attraktiv', 'wenige Spitzenrollen'] },
+  { label: 'KI im Kerngeschäft', v: ['keine Grundlage', 'Daten verstreut', 'Daten vorhanden', 'tragfähige Basis', 'Agenten im Einsatz'] }
+];
+
 const KPI_LABELS = {
   auto: 'Automatisierungsquote',
   tickets: 'Tickets je 100 Mitarbeiter und Monat',
