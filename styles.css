@@ -167,7 +167,7 @@ body.in-run { overflow: hidden; }
 .tile { background: color-mix(in srgb, var(--surface) 84%, transparent); border: 1px solid var(--line); border-radius: var(--radius); padding: 9px 11px; min-width: 0; }
 .tile .lbl { font-size: .7rem; color: var(--fg-3); line-height: 1.25; }
 .tile .val { font-family: var(--font-display); font-size: 1.45rem; font-weight: 600; line-height: 1.15; margin-top: 3px; letter-spacing: -0.02em; }
-.tile .val small { font-size: .8rem; font-weight: 500; color: var(--fg-3); margin-left: 2px; font-family: var(--font-body); }
+.tile .val small { font-size: .8rem; font-weight: 500; color: var(--fg-3); margin-left: 5px; font-family: var(--font-body); }
 .tile.hl .val { color: var(--human-ink); }
 .tile.ok .val { color: var(--agent-ink); }
 .panel { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; }
@@ -493,7 +493,7 @@ svg.chart .dot-a { fill: var(--accent); stroke: var(--surface); stroke-width: 2;
 .stepper li { display: flex; }
 .stepper button { border: 0; background: transparent; border-radius: 999px; padding: 6px 12px 6px 6px; display: flex; align-items: center; gap: 8px; color: var(--fg-2); font-size: .86rem; font-weight: 500; white-space: nowrap; }
 .stepper button .n { font-family: var(--font-mono); font-size: .76rem; width: 22px; height: 22px; border-radius: 50%; background: var(--surface-3); display: grid; place-items: center; color: var(--fg-2); }
-.stepper button:hover:not(:disabled) { color: var(--fg); background: var(--surface); }
+.stepper button:hover:not(:disabled):not([aria-current]) { color: var(--fg); background: var(--surface); }
 .stepper button:disabled { opacity: .45; cursor: default; }
 .stepper button.done .n { background: var(--agent-soft); color: var(--agent-ink); }
 .stepper button[aria-current="step"] { background: var(--accent); color: #fff; box-shadow: var(--shadow); }
@@ -722,3 +722,34 @@ code { font-family: var(--font-mono); font-size: .78em; background: var(--surfac
 .sn-table td.hint { text-align: left; color: var(--fg-2); font-size: .76rem; max-width: 340px; }
 .twin-run { margin-top: 12px; background: var(--surface-2); border-radius: var(--radius); padding: 12px 14px; }
 .twin-run h4 { margin: 0 0 8px; font-family: var(--font-display); font-size: .92rem; }
+
+/* ---------- Ziele, Simulation, Business Case ---------- */
+.plan-head.single { grid-template-columns: 1fr; }
+.frame-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 10px; }
+.frame-grid .budget-box { margin: 0; }
+.segments.wrap { flex-wrap: wrap; }
+.params-grid.one { grid-template-columns: 1fr; }
+.params-grid[hidden], .segments[hidden] { display: none; }
+.goal-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
+.goal { background: var(--surface-2); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.goal.off { opacity: .55; }
+.goal .gh { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
+.goal .gh b { font-family: var(--font-display); font-size: .92rem; }
+.goal .gv { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; font-size: .82rem; color: var(--fg-2); }
+.goal .gv input { width: 96px; font: inherit; font-size: .9rem; padding: 5px 8px; border: 1px solid var(--line); border-radius: var(--radius-s); background: var(--surface); color: var(--fg); text-align: right; }
+.goal .gnote { font-size: .74rem; color: var(--fg-3); }
+.verdict { border-radius: var(--radius); padding: 12px 14px; }
+.verdict.ok { background: var(--agent-soft); color: var(--agent-ink); }
+.verdict.warn { background: var(--human-soft); color: var(--human-ink); }
+.verdict.stop { background: var(--crit-soft); color: var(--crit); }
+.verdict b { display: block; font-family: var(--font-display); font-size: 1.05rem; margin-bottom: 4px; }
+.verdict ul { margin: 6px 0 0; padding-left: 18px; font-size: .84rem; }
+.road li.goal-hit .rn { background: var(--agent); color: #fff; }
+.case-kpi { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
+#simVerdict, #rmBudgetBox { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); gap: 14px; align-items: start; }
+#simVerdict .case-kpi, #rmBudgetBox .case-kpi { margin-top: 0; }
+@media (max-width: 760px) { #simVerdict, #rmBudgetBox { grid-template-columns: 1fr; } }
+.case-kpi .tile { background: var(--surface); }
+svg.chart .line-cash { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+svg.chart .area-neg { fill: var(--accent); opacity: .1; }
+svg.chart .area-pos { fill: var(--agent); opacity: .14; }

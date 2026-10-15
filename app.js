@@ -11,7 +11,7 @@
   const $ = (sel, root) => (root || document).querySelector(sel);
   const $$ = (sel, root) => Array.from((root || document).querySelectorAll(sel));
   const MS_PER_MIN = 170;   // Echtzeit je simulierter Minute bei 1×
-  const ROUTES = { start: 'start', intake: 'ist-aufnahme', istbild: 'digital-twin', plan: 'planen', run: 'arbeitstag', result: 'auswertung', analysis: 'prognose', levels: 'reifegrade', path: 'standort' };
+  const ROUTES = { start: 'start', goals: 'ziele', intake: 'ist-aufnahme', istbild: 'digital-twin', simulate: 'simulation', roadmap: 'roadmap', plan: 'planen', run: 'arbeitstag', result: 'auswertung', analysis: 'prognose', levels: 'reifegrade', path: 'standort' };
   const STEP_NAMES = { intake: 'Ist-Aufnahme', istbild: 'Digital Twin', plan: 'Planung', run: 'Arbeitstag', result: 'Auswertung', analysis: 'Prognose' };
 
   const STORAGE_VERSION = 2;   // Erhöhen setzt den gespeicherten Zustand aller Nutzer beim nächsten Laden zurück
@@ -26,7 +26,8 @@
 
   const allOne = () => { const o = {}; FIELDS.forEach(f => { o[f.id] = 1; }); return o; };
   const state = {
-    view: 'sim', screen: 'start', returnScreen: 'start', evaluated: false, ot: store.get('zt.ot', false), twinRun: false, twinLast: null,
+    view: 'sim', screen: 'start', returnScreen: 'start', evaluated: false, ot: store.get('zt.ot', false), twinRun: false, twinLast: null, simResult: null,
+    goals: Object.assign({ touched: false, horizon: 36, budgetMode: 'needed', budget: 300000, lanes: 0, perYear: 0, items: { level: { on: true, v: 4 }, tickets: { on: true, v: 50 }, user: { on: true, v: 70 }, mttr: { on: true, v: 4 }, auto: { on: false, v: 50 }, cost: { on: false, v: 50 }, ot: { on: true, v: 70 } } }, store.get('zt.goals', {})),
     budgetIdx: store.get('zt.budget', 1),
     useAssessment: store.get('zt.useAssessment', false),
     base: allOne(), levels: allOne(),
@@ -126,16 +127,17 @@
     if (replace) history.replaceState(null, '', hash); else history.pushState(null, '', hash);
   }
   function updateStepper() {
-    const active = state.view === 'sim' ? (state.screen === 'run' && state.twinRun ? 'istbild' : state.screen) : null;
+    const map = { plan: 'simulate', run: state.twinRun ? 'istbild' : 'simulate', result: 'simulate', analysis: 'roadmap' };
+    const active = state.view === 'sim' ? (map[state.screen] || state.screen) : null;
     $$('#steps [data-step]').forEach(b => {
       const s = b.dataset.step;
       if (s === active) b.setAttribute('aria-current', 'step'); else b.removeAttribute('aria-current');
-      b.disabled = (s === 'result' && !state.evaluated) || (s === 'run' && state.screen === 'run' && !state.ended && state.view === 'sim');
-      b.classList.toggle('done', (s === 'intake' && intakeHasData()) || (s === 'istbild' && state.intake.applied) || (s === 'plan' && ['run', 'result', 'analysis'].indexOf(state.screen) >= 0) || (s === 'run' && state.evaluated) || (s === 'result' && state.evaluated && state.screen === 'analysis'));
+      b.disabled = false;
+      b.classList.toggle('done', (s === 'goals' && !!state.goals.touched) || (s === 'intake' && intakeHasData()) || (s === 'istbild' && state.intake.applied) || (s === 'simulate' && !!state.simResult) || (s === 'roadmap' && !!state.simResult && state.simResult.seenCase));
     });
     const back = $('#backBtn');
     if (state.view !== 'sim') {
-      const lbl = { start: 'Zum Start', intake: 'Zurück zur Ist-Aufnahme', istbild: 'Zurück zum Digital Twin', plan: 'Zurück zur Planung', run: state.ended ? 'Zurück zur Auswertung' : 'Zurück zum Arbeitstag', result: 'Zurück zur Auswertung', analysis: 'Zurück zur Prognose' }[state.returnScreen] || 'Zur Simulation';
+      const lbl = { start: 'Zum Start', goals: 'Zurück zu den Zielen', simulate: 'Zurück zur Simulation', roadmap: 'Zurück zur Roadmap', intake: 'Zurück zur Ist-Aufnahme', istbild: 'Zurück zum Digital Twin', plan: 'Zurück zur Planung', run: state.ended ? 'Zurück zur Auswertung' : 'Zurück zum Arbeitstag', result: 'Zurück zur Auswertung', analysis: 'Zurück zur Prognose' }[state.returnScreen] || 'Zur Simulation';
       back.textContent = lbl; back.hidden = false;
     } else back.hidden = true;
   }
@@ -145,11 +147,14 @@
   }
   function showScreen(name, opts) {
     state.screen = name;
-    ['start', 'intake', 'istbild', 'plan', 'result', 'analysis'].forEach(s => { $('#screen-' + s).hidden = s !== name; });
+    ['start', 'goals', 'intake', 'istbild', 'simulate', 'roadmap', 'plan', 'result', 'analysis'].forEach(s => { $('#screen-' + s).hidden = s !== name; });
     const hud = $('#hud');
     hud.classList.toggle('dim', name !== 'run');
     hud.inert = name !== 'run';
     document.body.classList.toggle('in-run', name === 'run');
+    if (name === 'goals') renderGoals();
+    if (name === 'simulate') renderSimulate();
+    if (name === 'roadmap') renderRoadmapCase();
     if (name === 'intake') renderIntake();
     if (name === 'istbild' && !(opts && opts.animate)) { $('#revealRun').hidden = true; $('#revealResult').hidden = false; renderProposal(); }
     if (name === 'plan') renderPlan();
@@ -183,8 +188,8 @@
     const key = Object.keys(ROUTES).find(k => ROUTES[k] === h) || 'start';
     if (key === 'levels' || key === 'path') { showView(key, { replace: true }); return; }
     if (state.view !== 'sim') showView('sim', { replace: true });
-    if (key === 'run') { if (state.screen === 'run') return; showScreen(state.evaluated ? 'result' : 'plan', { replace: true }); return; }
-    if (key === 'result' && !state.evaluated) { showScreen('plan', { replace: true }); return; }
+    if (key === 'run') { if (state.screen === 'run') return; showScreen(state.evaluated ? 'result' : 'simulate', { replace: true }); return; }
+    if (key === 'result' && !state.evaluated) { showScreen('simulate', { replace: true }); return; }
     if (state.screen !== key) showScreen(key, { replace: true });
   }
 
@@ -728,6 +733,7 @@
     state.params = Object.assign({}, PARAMS); state.frameIdx = null; state.levelView = 3;
     EVENTS.forEach(e => { e.freq = DEFAULT_FREQ[e.id]; });
     state.intake = { customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false, extra: {}, agentAnswers: {} }; rawData = null; rawExtra = {};
+    state.simResult = null; state.goals = { touched: false, horizon: 36, budgetMode: 'needed', budget: 300000, lanes: 0, perYear: 0, items: { level: { on: true, v: 4 }, tickets: { on: true, v: 50 }, user: { on: true, v: 70 }, mttr: { on: true, v: 4 }, auto: { on: false, v: 50 }, cost: { on: false, v: 50 }, ot: { on: true, v: 70 } } };
     const pg = $('#paramsGrid'); if (pg) { pg.innerHTML = ''; $('#freqGrid').innerHTML = ''; }
     $('#feed').innerHTML = ''; window.Scene3D.reset();
     endHandled = true;
@@ -737,7 +743,7 @@
   }
 
   function setOt(on, quiet) {
-    on = !!on; state.ot = on; store.set('zt.ot', on);
+    on = !!on; state.ot = on; store.set('zt.ot', on); state.simResult = null;
     setOtEnabled(on);
     ['levels', 'base'].forEach(k => { if (state[k].ot === undefined) state[k].ot = 1; });
     if (state.assessment.ot === undefined) state.assessment.ot = 2;
@@ -1058,7 +1064,7 @@
     const team = it.extra && it.extra.team; it.lanes = team && team.lanes ? team.lanes : null;
     store.set('zt.freq', fo); store.set('zt.params', state.params);
     const pg = $('#paramsGrid'); if (pg) { pg.innerHTML = ''; $('#freqGrid').innerHTML = ''; }
-    it.applied = true; saveIntake();
+    it.applied = true; saveIntake(); state.simResult = null;
     applyBase(); state.levels = Object.assign({}, state.base); store.set('zt.levels', state.levels);
     renderPlan(); renderMatrix(); renderProposal(); updateStepper();
     toast('Ist-Bild übernommen: Ausgangslage, Mitarbeiterzahl' + (cal ? ', Häufigkeiten aus ' + it.metrics.tickets + ' Tickets' : '') + (Object.keys(extraCal).length ? ' und ' + Object.keys(extraCal).length + ' Messwerten weiterer Systeme' : '') + ' gesetzt.');
@@ -1124,13 +1130,13 @@
     $('#toolList').addEventListener('change', e => { const id = e.target.dataset && e.target.dataset.tool; if (!id) return; state.intake.manual[id] = e.target.checked; state.intake.applied = false; saveIntake(); renderToolList(); renderReady(); });
     $('#questionList').addEventListener('click', e => { const b = e.target.closest('[data-q]'); if (!b) return; state.intake.answers[b.dataset.q] = b.dataset.a; state.intake.applied = false; saveIntake(); renderQuestions(); renderReady(); });
     $('#proposalCards').addEventListener('change', e => { const f = e.target.dataset && e.target.dataset.override; if (!f) return; state.intake.overrides[f] = parseInt(e.target.value, 10); state.intake.applied = false; saveIntake(); renderProposal(); });
-    $('#applyIntakeBtn').addEventListener('click', () => { applyIntake(); showScreen('plan'); });
+    $('#applyIntakeBtn').addEventListener('click', () => { applyIntake(); state.simResult = null; showScreen('simulate'); });
     $('#intakeNextBtn').addEventListener('click', startIstbild);
     $('#istbildBackBtn').addEventListener('click', () => showScreen('intake'));
     $('#twinRunBtn').addEventListener('click', startTwinRun);
     $('#twinRunBtn2').addEventListener('click', startTwinRun);
     $('#profileCopyBtn2').addEventListener('click', () => $('#profileCopyBtn').click());
-    $('#intakeSkipBtn').addEventListener('click', () => { state.useAssessment = false; store.set('zt.useAssessment', false); applyBase(); showScreen('plan'); });
+    $('#intakeSkipBtn').addEventListener('click', () => { state.useAssessment = false; store.set('zt.useAssessment', false); applyBase(); state.simResult = null; showScreen('simulate'); });
     $('#profileCopyBtn').addEventListener('click', () => { const txt = profileJSON(); const ok = () => toast('Profil in die Zwischenablage kopiert.'); if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok, () => toast('Kopieren nicht möglich.')); else toast('Kopieren nicht möglich.'); });
     $('#profileImport').addEventListener('change', e => { const f = e.target.files[0]; if (!f) return; const r = new FileReader(); r.onload = () => importProfile(String(r.result || '')); r.readAsText(f); e.target.value = ''; });
   }
@@ -1175,6 +1181,217 @@
     $('#pathChart').innerHTML = pathChart(sch);
   }
 
+
+  /* ---------- Ziele ---------- */
+  const GOAL_DEFS = [
+    { id: 'level', name: 'Zielstufe in allen Handlungsfeldern', unit: 'Stufe', min: 2, max: 5, step: 1, note: 'Jedes Feld erreicht mindestens diese Stufe. Die Reife wird durch das schwächste Feld begrenzt.' },
+    { id: 'tickets', name: 'Tickets senken um', unit: '%', min: 10, max: 95, step: 5, note: 'Je Jahr, gegenüber dem Zwilling heute.' },
+    { id: 'user', name: 'Ausfallzeit der Mitarbeiter senken um', unit: '%', min: 10, max: 99, step: 5, note: 'Produktivitätsverlust je Jahr.' },
+    { id: 'mttr', name: 'Lösungszeit höchstens', unit: 'h', min: 0.1, max: 48, step: 0.5, note: 'Durchschnitt über alle Ereignisse, gewichtet nach Häufigkeit.' },
+    { id: 'auto', name: 'Anteil ohne menschlichen Eingriff mindestens', unit: '%', min: 10, max: 100, step: 5, note: 'Verhindert oder autonom gelöst.' },
+    { id: 'cost', name: 'Jährliche Kosten senken um', unit: '%', min: 10, max: 95, step: 5, note: 'IT-Aufwand, Ausfall, Tickets und bei OT Stillstand zusammen.' },
+    { id: 'ot', name: 'Produktionsstillstand senken um', unit: '%', min: 10, max: 99, step: 5, note: 'Nur mit OT-Erweiterung.', ot: true }
+  ];
+  const saveGoals = () => store.set('zt.goals', state.goals);
+  function simStartLevels() { return state.intake.applied ? Object.assign({}, state.base) : (intakeHasData() ? twinLevels() : Object.assign({}, state.base)); }
+  function metricsOf(levels) {
+    const P = state.params, A = window.Analysis;
+    const e = A.expected(levels, P);
+    let dur = 0, n = 0, auto = 0; A.variants(levels).forEach(x => { const k = A.perYear(x.e, P); dur += x.v.steps.reduce((s, st) => s + st.d, 0) / 60 * k; n += k; if (x.v.touches === 0 || x.v.prevented) auto += k; });
+    return { minLevel: Math.min.apply(null, FIELDS.map(f => levels[f.id])), tickets: e.tickets, user: e.user, cost: e.cost, mttr: n ? dur / n : 0, auto: n ? auto / n : 0, ot: e.ot, prevented: e.prevented, it: e.it };
+  }
+  function goalTarget(g, base) {
+    const v = state.goals.items[g.id].v;
+    switch (g.id) {
+      case 'level': return { target: v, test: m => m.minLevel >= v, fmt: x => 'Stufe ' + x, cur: m => m.minLevel, valueOf: m => m.minLevel, higherBetter: true, gap: (m, l) => FIELDS.reduce((s, f) => s + Math.max(0, v - l[f.id]), 0) };
+      case 'tickets': return { target: base.tickets * (1 - v / 100), test: m => m.tickets <= base.tickets * (1 - v / 100) + 1e-9, fmt: x => fmtNum(Math.round(x / 12)) + ' je Monat', cur: m => m.tickets, valueOf: m => m.tickets, higherBetter: false, gap: m => Math.max(0, m.tickets - base.tickets * (1 - v / 100)) };
+      case 'user': return { target: base.user * (1 - v / 100), test: m => m.user <= base.user * (1 - v / 100) + 1e-9, fmt: x => fmtNum(Math.round(x / 60)) + ' h je Jahr', cur: m => m.user, valueOf: m => m.user, higherBetter: false, gap: m => Math.max(0, m.user - base.user * (1 - v / 100)) };
+      case 'mttr': return { target: v, test: m => m.mttr <= v + 1e-9, fmt: x => fmtDur(x), cur: m => m.mttr, valueOf: m => m.mttr, higherBetter: false, gap: m => Math.max(0, m.mttr - v) };
+      case 'auto': return { target: v / 100, test: m => m.auto >= v / 100 - 1e-9, fmt: x => pct(x), cur: m => m.auto, valueOf: m => m.auto, higherBetter: true, gap: m => Math.max(0, v / 100 - m.auto) };
+      case 'cost': return { target: base.cost * (1 - v / 100), test: m => m.cost <= base.cost * (1 - v / 100) + 1e-9, fmt: x => fmtEur(x) + ' je Jahr', cur: m => m.cost, valueOf: m => m.cost, higherBetter: false, gap: m => Math.max(0, m.cost - base.cost * (1 - v / 100)) };
+      case 'ot': return { target: base.ot * (1 - v / 100), test: m => m.ot <= base.ot * (1 - v / 100) + 1e-9, fmt: x => fmtNum(Math.round(x / 60)) + ' h je Jahr', cur: m => m.ot, valueOf: m => m.ot, higherBetter: false, gap: m => Math.max(0, m.ot - base.ot * (1 - v / 100)) };
+    }
+  }
+  function activeGoals() { return GOAL_DEFS.filter(g => (!g.ot || state.ot) && state.goals.items[g.id].on); }
+  function renderGoals() {
+    const G = state.goals;
+    $('#horizonSeg').innerHTML = [12, 24, 36, 48, 60].map(m => '<button type="button" data-horizon="' + m + '" aria-pressed="' + (G.horizon === m) + '"><span class="n">' + m + '</span><span class="lbl">Monate</span></button>').join('');
+    $$('#budgetModeSeg button').forEach(b => b.setAttribute('aria-pressed', b.dataset.bmode === G.budgetMode));
+    $('#budgetAmountRow').hidden = G.budgetMode !== 'available';
+    $('#goalBudget').value = G.budget;
+    $('#budgetModeHint').textContent = G.budgetMode === 'available' ? 'Die Simulation sucht den besten Pfad innerhalb dieses Budgets und zeigt, wie weit er trägt.' : 'Die Simulation ermittelt das nötige Budget und erstellt in Schritt 5 die Argumentation für den Antrag.';
+    $('#goalLanes').value = G.lanes || 0; $('#goalPerYear').value = G.perYear || 0;
+    const base = metricsOf(simStartLevels());
+    $('#goalList').innerHTML = GOAL_DEFS.filter(g => !g.ot || state.ot).map(g => {
+      const it = G.items[g.id]; const t = goalTarget(g, base);
+      return '<div class="goal' + (it.on ? '' : ' off') + '"><div class="gh"><b>' + g.name + '</b><label class="switch"><input type="checkbox" data-goal-on="' + g.id + '"' + (it.on ? ' checked' : '') + '><span></span></label></div>' +
+        '<div class="gv"><span>Heute im Zwilling: <b>' + t.fmt(t.cur(base)) + '</b></span><span><input type="number" data-goal-v="' + g.id + '" value="' + it.v + '" min="' + g.min + '" max="' + g.max + '" step="' + g.step + '"> ' + g.unit + '</span></div>' +
+        '<div class="gnote">Ziel: ' + t.fmt(t.target) + '. ' + g.note + '</div></div>';
+    }).join('');
+    renderGoalsSummary();
+  }
+  function renderGoalsSummary() {
+    const G = state.goals, n = activeGoals().length;
+    $('#goalsSummary').textContent = n + ' Ziele aktiv · ' + G.horizon + ' Monate · ' + (G.budgetMode === 'available' ? 'Budget ' + fmtEur(G.budget) : 'Budget wird ermittelt');
+  }
+
+  /* ---------- Simulation: Pfadsuche mit Zielprüfung ---------- */
+  function scheduleCapped(steps, lanes, startLevels, capPerYear) {
+    const sch = window.Intake.schedule(steps, lanes, startLevels);
+    if (!capPerYear) return sch;
+    const yearInv = {};
+    sch.steps.forEach((s, i) => {
+      let earliest = s.start;
+      for (let j = 0; j < i; j++) { const pj = sch.steps[j]; const before = j ? sch.steps[j - 1].levels : startLevels; if (pj.field.id === s.field.id || (stageBlocker(s.field.id, s.stage, before) && !stageBlocker(s.field.id, s.stage, pj.levels))) earliest = Math.max(earliest, pj.end); }
+      let start = Math.max(s.start, earliest);
+      let y = Math.floor(start / 12);
+      while ((yearInv[y] || 0) + s.invest > capPerYear && (yearInv[y] || 0) > 0) { y++; start = y * 12; }
+      yearInv[y] = (yearInv[y] || 0) + s.invest;
+      s.start = start; s.end = start + s.dur;
+    });
+    sch.totalMonths = sch.steps.length ? Math.max.apply(null, sch.steps.map(o => o.end)) : 0;
+    return sch;
+  }
+  function computeSimulation() {
+    const G = state.goals, P = state.params, A = window.Analysis;
+    const start = simStartLevels();
+    const base = metricsOf(start);
+    const goals = activeGoals().map(g => Object.assign({ g }, goalTarget(g, base)));
+    const budgetPoints = G.budgetMode === 'available' ? Math.floor(G.budget / P.eurPerPoint) : 80;
+    const lanes = G.lanes > 0 ? G.lanes : (state.intake.applied && state.intake.lanes ? state.intake.lanes : 2);
+    const memo = {}; const mOf = l => { const key = FIELDS.map(f => l[f.id]).join(''); return memo[key] || (memo[key] = metricsOf(l)); };
+    const gap0 = goals.map(gl => Math.max(1e-9, gl.gap(base, start)));
+    const goalGap = goals.length ? (l => { const m = mOf(l); return goals.reduce((s, gl, i) => s + Math.min(1, gl.gap(m, l) / gap0[i]), 0); }) : null;
+    const road = A.roadmap(start, budgetPoints, P, goalGap);
+    const roadFull = budgetPoints >= 80 ? road : A.roadmap(start, 80, P, goalGap);
+    const sch = scheduleCapped(road.steps, lanes, start, G.perYear || 0);
+    const schFull = roadFull === road ? sch : scheduleCapped(roadFull.steps, lanes, start, G.perYear || 0);
+    const allMet = (levels) => { const m = mOf(levels); return { m, ok: goals.every(gl => gl.test(m)) }; };
+    const findK = (r) => { for (let k = 0; k < r.steps.length; k++) { if (allMet(r.steps[k].levels).ok) return k; } return -1; };
+    const k = goals.length ? findK(road) : (road.steps.length ? road.steps.length - 1 : -1);
+    const kFull = goals.length ? findK(roadFull) : (roadFull.steps.length ? roadFull.steps.length - 1 : -1);
+    const full = {}; FIELDS.forEach(f => { full[f.id] = 5; });
+    const mFull = metricsOf(full);
+    const monthsOf = (s, kk) => kk < 0 ? null : Math.max.apply(null, s.steps.slice(0, kk + 1).map(o => o.end));
+    const checks = goals.map(gl => {
+      const kk = road.steps.findIndex(st => gl.test(mOf(st.levels)));
+      const kkFull = roadFull.steps.findIndex(st => gl.test(mOf(st.levels)));
+      const best = roadFull.steps.length ? mOf(roadFull.steps[roadFull.steps.length - 1].levels) : base;
+      return { g: gl.g, cur: gl.cur(base), target: gl.target, fmt: gl.fmt, metAt: kk, metAtFull: kkFull, month: kk >= 0 ? monthsOf(sch, kk) : null, monthFull: kkFull >= 0 ? monthsOf(schFull, kkFull) : null, bestOnPath: gl.valueOf(best), bestFull: gl.valueOf(mFull), feasibleFull: gl.test(mFull) || kkFull >= 0, okNow: gl.test(base) };
+    });
+    let verdict;
+    const metOnPath = k >= 0, monthsK = monthsOf(sch, k), investK = k >= 0 ? road.steps[k].cumInvest : 0;
+    const monthsFull = monthsOf(schFull, kFull), investFull = kFull >= 0 ? roadFull.steps[kFull].cumInvest : 0;
+    if (!goals.length) verdict = { cls: 'warn', title: 'Keine Ziele aktiv', text: 'Schalten Sie in Schritt 1 mindestens ein Ziel ein. Gezeigt wird der Pfad mit dem höchsten Nettonutzen.' };
+    else if (checks.some(c => !c.feasibleFull)) verdict = { cls: 'stop', title: 'Stopp: Ziele so nicht erreichbar', text: 'Auch mit vollem Ausbau aller Handlungsfelder auf Stufe 5 werden nicht alle Ziele erreicht.', items: checks.filter(c => !c.feasibleFull).map(c => c.g.name + ': bestenfalls ' + c.fmt(c.bestFull) + ' statt ' + c.fmt(c.target) + '. Ziel anpassen oder Annahmen prüfen.') };
+    else if (metOnPath && monthsK <= G.horizon) verdict = { cls: 'ok', title: 'Ziele erreichbar in ' + Math.round(monthsK) + ' Monaten', text: k + 1 + ' Schritte, ' + fmtEur(investK) + ' Investition' + (G.budgetMode === 'available' ? ' von ' + fmtEur(G.budget) + ' verfügbar' : '') + ', innerhalb des Horizonts von ' + G.horizon + ' Monaten.' };
+    else if (metOnPath) verdict = { cls: 'warn', title: 'Erreichbar, aber erst nach ' + Math.round(monthsK) + ' Monaten', text: 'Der Horizont von ' + G.horizon + ' Monaten reicht nicht. ' + (k + 1) + ' Schritte, ' + fmtEur(investK) + ' Investition.', items: ['Horizont auf ' + Math.ceil(monthsK / 12) * 12 + ' Monate verlängern', 'Mehr parallele Arbeitsstränge (Teamkapazität oder Partner) einplanen', 'Ziele mit langer Vorlaufzeit (Stufe 5, Organisation) zurückstellen'] };
+    else if (kFull >= 0) verdict = { cls: 'warn', title: 'Budget reicht nicht' + (monthsFull > G.horizon ? ', Horizont ebenfalls nicht' : ''), text: 'Mit ' + fmtEur(G.budget) + ' endet der Pfad vor dem Ziel. Nötig sind ' + fmtEur(investFull) + ' (' + (kFull + 1) + ' Schritte, etwa ' + Math.round(monthsFull) + ' Monate). Lücke: ' + fmtEur(Math.max(0, investFull - G.budget)) + '.' + (monthsFull > G.horizon ? ' Der Pfad braucht ' + Math.round(monthsFull) + ' Monate, der Horizont erlaubt ' + G.horizon + '.' : ''), items: ['Budgetantrag über die Lücke, Argumentation in Schritt 5', 'Ziele reduzieren, die der Pfad zuletzt erreicht', 'Budget auf mehrere Jahre strecken (Investition je Jahr begrenzen)'].concat(monthsFull > G.horizon ? ['Horizont auf ' + Math.ceil(monthsFull / 12) * 12 + ' Monate verlängern oder mehr parallele Arbeitsstränge einplanen'] : []) };
+    else verdict = { cls: 'stop', title: 'Stopp: Ziele auf keinem Pfad erreichbar', text: 'Der Optimierer findet keinen Pfad, auf dem alle Ziele zugleich erreicht werden. Ziele einzeln prüfen und entschärfen.', items: checks.filter(c => c.metAtFull < 0).map(c => c.g.name + ': bestenfalls ' + c.fmt(c.bestOnPath)) };
+    const useFull = !metOnPath && kFull >= 0;
+    const pathRoad = useFull ? roadFull : road, pathSch = useFull ? schFull : sch, pathK = useFull ? kFull : (metOnPath ? k : road.steps.length - 1);
+    const endLevels = pathK >= 0 ? pathRoad.steps[pathK].levels : start;
+    state.simResult = { start, base, goals: checks, verdict, road: pathRoad, sch: pathSch, k: pathK, endLevels, months: pathK >= 0 ? monthsOf(pathSch, pathK) : 0, invest: pathK >= 0 ? pathRoad.steps[pathK].cumInvest : 0, lanes, budgetPoints, useFull, seenCase: state.simResult ? state.simResult.seenCase : false };
+    return state.simResult;
+  }
+  function renderSimulate() {
+    const R = computeSimulation(), G = state.goals;
+    $('#simTitle').textContent = 'Wie erreicht ' + (state.intake.customer || 'die IT') + ' die Ziele?';
+    $('#simVerdict').innerHTML = '<div class="verdict ' + R.verdict.cls + '"><b>' + esc(R.verdict.title) + '</b>' + esc(R.verdict.text) + (R.verdict.items ? '<ul>' + R.verdict.items.map(i => '<li>' + esc(i) + '</li>').join('') + '</ul>' : '') + '</div>' +
+      '<div class="case-kpi"><div class="tile"><div class="lbl">Schritte bis zum Ziel</div><div class="val">' + (R.k + 1) + '</div></div><div class="tile"><div class="lbl">Dauer</div><div class="val">' + Math.round(R.months) + '<small>Monate</small></div></div><div class="tile"><div class="lbl">Investition</div><div class="val" style="font-size:1.05rem">' + fmtEur(R.invest) + '</div></div><div class="tile"><div class="lbl">Arbeitsstränge</div><div class="val">' + R.lanes + '</div></div></div>';
+    $('#goalTable').innerHTML = '<thead><tr><th style="text-align:left">Ziel</th><th>Heute</th><th>Zielwert</th><th>Bester Wert auf dem Pfad</th><th>Erreicht</th><th style="text-align:left">Status</th></tr></thead><tbody>' +
+      (R.goals.length ? R.goals.map(c => { const met = c.metAt >= 0 || c.okNow; const feas = c.feasibleFull; return '<tr><td style="text-align:left">' + c.g.name + '</td><td>' + c.fmt(c.cur) + '</td><td>' + c.fmt(c.target) + '</td><td>' + c.fmt(c.bestOnPath) + '</td><td>' + (c.okNow ? 'heute' : c.metAt >= 0 ? 'Schritt ' + (c.metAt + 1) + ' · Monat ' + Math.round(c.month) : (c.metAtFull >= 0 ? 'Schritt ' + (c.metAtFull + 1) + ' bei vollem Budget' : '–')) + '</td><td class="' + (met ? 'ok' : feas ? 'warn' : 'bad') + '" style="text-align:left">' + (c.okNow ? 'bereits erfüllt' : met ? 'erreicht' : feas ? 'nur mit mehr Budget' : 'nicht erreichbar') + '</td></tr>'; }).join('') : '<tr><td colspan="6" style="text-align:left">Keine Ziele aktiv.</td></tr>') + '</tbody>';
+    const steps = R.road.steps.slice(0, R.k + 1);
+    $('#simPath').innerHTML = steps.map((s, i) => {
+      const prep = s.stepSaving <= 0; const hit = R.goals.filter(c => c.metAt === i || (R.useFull && c.metAtFull === i)).map(c => c.g.name);
+      const sc = R.sch.steps[i];
+      return '<li class="' + (prep ? 'prep' : (s.payback <= 12 ? 'pay' : '')) + (hit.length ? ' goal-hit' : '') + '"><span class="rn">' + (i + 1) + '</span><div class="rt">' + s.field.name + ': Stufe ' + (s.stage - 1) + ' → ' + s.stage + ' · ' + esc(s.title) + '<small>' + (prep ? 'Voraussetzung' : 'spart ' + fmtEur(s.stepSaving) + ' je Jahr') + ' · Monat ' + Math.round(sc.start) + ' bis ' + Math.round(sc.end) + ' · ' + fmtEur(s.invest) + (hit.length ? ' · erreicht: ' + esc(hit.join(', ')) : '') + '</small></div><div class="rv"><b>' + fmtEur(s.cumNet) + '</b>Nettoersparnis je Jahr<br>Investition bisher ' + fmtEur(s.cumInvest) + '</div></li>';
+    }).join('') || '<li><div class="rt">Kein Schritt nötig oder möglich.</div></li>';
+    $('#simChart').innerHTML = steps.length ? pathChart({ steps: R.sch.steps.slice(0, R.k + 1), totalMonths: R.months }) : '';
+  }
+
+  /* ---------- Roadmap und Business Case ---------- */
+  function cashflow(R) {
+    const steps = R.sch.steps.slice(0, R.k + 1), startCost = R.road.startCost;
+    const H = Math.max(state.goals.horizon, Math.ceil(R.months) + 1, 12);
+    const rows = []; let cum = 0, breakEven = null;
+    for (let m = 0; m < H; m++) {
+      let inv = 0, opex = 0, save = 0;
+      steps.forEach(s => { if (Math.floor(s.start) === m) inv += s.invest; if (m >= s.start) opex += s.opex / 12; });
+      const done = steps.filter(s => s.end <= m); const costAfter = done.length ? done[done.length - 1].costAfter : startCost;
+      save = (startCost - costAfter) / 12;
+      cum += save - inv - opex;
+      if (breakEven === null && cum >= 0 && m > 0 && inv + opex + save > 0 && steps.length) breakEven = m;
+      rows.push({ m, inv, opex, save, cum });
+    }
+    if (breakEven !== null && rows.slice(0, breakEven).every(r => r.cum >= 0)) breakEven = null;
+    return { rows, breakEven, H };
+  }
+  function caseChart(cf) {
+    const W = 960, H = 230, L = 64, R = 12, T = 14, B = 26;
+    const vals = cf.rows.map(r => r.cum); const max = Math.max(1, Math.max.apply(null, vals)), min = Math.min(0, Math.min.apply(null, vals));
+    const step = niceStep(max - min), top = Math.ceil(max / step) * step, bottom = Math.floor(min / step) * step;
+    const iw = W - L - R, ih = H - T - B; const x = m => L + m / Math.max(1, cf.rows.length - 1) * iw; const y = v => T + ih - (v - bottom) / (top - bottom) * ih;
+    const kfmt = v => Math.abs(v) >= 1e6 ? fmtNum(v / 1e6, 1) + ' M' : Math.abs(v) >= 1000 ? fmtNum(v / 1000) + ' k' : fmtNum(v);
+    let s = '<svg class="chart" viewBox="0 0 ' + W + ' ' + H + '" role="img" aria-label="Kumulierter Cashflow je Monat"><g class="grid">';
+    for (let v = bottom; v <= top + 1e-9; v += step) s += '<line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(v) + '" y2="' + y(v) + '"/><text x="' + (L - 6) + '" y="' + (y(v) + 3) + '" text-anchor="end">' + kfmt(v) + '</text>';
+    s += '</g>';
+    const path = cf.rows.map((r, i) => (i ? 'L' : 'M') + x(r.m) + ' ' + y(r.cum)).join(' ');
+    s += '<path class="area-neg" d="' + path + ' L' + x(cf.rows.length - 1) + ' ' + y(0) + ' L' + x(0) + ' ' + y(0) + ' Z"/>';
+    s += '<path class="line-cash" d="' + path + '"/>';
+    s += '<g class="axis"><line x1="' + L + '" x2="' + (W - R) + '" y1="' + y(0) + '" y2="' + y(0) + '"/></g>';
+    for (let m = 0; m < cf.rows.length; m += 12) s += '<text class="xl" x="' + x(m) + '" y="' + (H - 8) + '" text-anchor="middle">Jahr ' + (m / 12 + 1) + '</text>';
+    if (cf.breakEven !== null) s += '<circle class="dot-a" cx="' + x(cf.breakEven) + '" cy="' + y(cf.rows[cf.breakEven].cum) + '" r="4"><title>Break-even in Monat ' + cf.breakEven + '</title></circle>';
+    s += '</svg>';
+    return s;
+  }
+  function renderRoadmapCase() {
+    const R = state.simResult || computeSimulation(); R.seenCase = true;
+    const G = state.goals, steps = R.sch.steps.slice(0, R.k + 1), last = steps[steps.length - 1];
+    const cf = cashflow(R);
+    const years = Math.ceil(cf.H / 12);
+    const yearRows = []; for (let yy = 0; yy < years; yy++) { const rs = cf.rows.slice(yy * 12, yy * 12 + 12); yearRows.push({ y: yy + 1, inv: rs.reduce((s, r) => s + r.inv, 0), opex: rs.reduce((s, r) => s + r.opex, 0), save: rs.reduce((s, r) => s + r.save, 0), cum: rs.length ? rs[rs.length - 1].cum : 0 }); }
+    const investTotal = steps.reduce((s, st) => s + st.invest, 0), savingsFull = last ? last.cumNet : 0;
+    const maxYear = Math.max.apply(null, yearRows.map(r => r.inv).concat([0]));
+    const inaction = R.road.startCost * (G.horizon / 12);
+    $('#rmTitle').textContent = 'Roadmap und Business Case' + (state.intake.customer ? ' für ' + state.intake.customer : '');
+    $('#rmSummary').textContent = (R.verdict.cls === 'stop' ? 'Die Ziele sind in der gewählten Form nicht erreichbar; gezeigt wird der beste Pfad. ' : '') + steps.length + ' Schritte in etwa ' + Math.round(R.months) + ' Monaten, ' + fmtEur(investTotal) + ' Investition, danach ' + fmtEur(savingsFull) + ' Nettoersparnis je Jahr' + (cf.breakEven !== null ? ', Break-even nach ' + cf.breakEven + ' Monaten.' : '.') + ' Kosten des Nichtstuns über ' + G.horizon + ' Monate: ' + fmtEur(inaction) + '.';
+    const gap = G.budgetMode === 'available' ? investTotal - G.budget : investTotal;
+    $('#rmBudgetBox').innerHTML = '<div><div class="eyebrow" style="margin-bottom:6px">' + (G.budgetMode === 'available' ? 'Budgetabgleich' : 'Budgetbedarf für den Antrag') + '</div>' +
+      '<div class="hero-num" style="font-size:2rem">' + fmtEur(investTotal) + '<small style="display:block;margin:4px 0 0;font-size:.8rem">Investition gesamt · höchstens ' + fmtEur(maxYear) + ' in einem Jahr' + (G.budgetMode === 'available' ? ' · verfügbar ' + fmtEur(G.budget) : '') + '</small></div></div>' +
+      '<div class="case-kpi"><div class="tile"><div class="lbl">Laufende Kosten je Jahr nach Abschluss</div><div class="val" style="font-size:1rem">' + fmtEur(steps.reduce((s, st) => s + st.opex, 0)) + '</div></div><div class="tile"><div class="lbl">' + (G.budgetMode === 'available' ? (gap > 0 ? 'Lücke zum verfügbaren Budget' : 'Reserve im verfügbaren Budget') : 'Amortisation') + '</div><div class="val" style="font-size:1rem">' + (G.budgetMode === 'available' ? fmtEur(Math.abs(gap)) : (last ? fmtMonths(last.payback) : '–')) + '</div></div></div>';
+    $('#caseTable').innerHTML = '<thead><tr><th>Jahr</th><th>Investition</th><th>Laufende Kosten</th><th>Ersparnis</th><th>Netto</th><th>Kumuliert</th></tr></thead><tbody>' + yearRows.map(r => '<tr><td>Jahr ' + r.y + '</td><td>' + fmtEur(r.inv) + '</td><td>' + fmtEur(r.opex) + '</td><td>' + fmtEur(r.save) + '</td><td class="' + (r.save - r.inv - r.opex >= 0 ? 'ok' : 'bad') + '">' + fmtEur(r.save - r.inv - r.opex) + '</td><td class="' + (r.cum >= 0 ? 'ok' : '') + '">' + fmtEur(r.cum) + '</td></tr>').join('') + '</tbody>';
+    $('#caseChart').innerHTML = caseChart(cf);
+    const args = [];
+    const prevGain = metricsOf(R.endLevels).prevented - R.base.prevented;
+    args.push({ t: 'Wirtschaftlichkeit', s: 'Nach Abschluss sinken die jährlichen Kosten um ' + fmtEur(savingsFull) + ' netto, von ' + fmtEur(R.road.startCost) + ' auf ' + fmtEur(last ? last.costAfter : R.road.startCost) + '. ' + (cf.breakEven !== null ? 'Die Investition ist nach ' + cf.breakEven + ' Monaten zurückverdient.' : 'Die Amortisation liegt außerhalb des Horizonts.') });
+    args.push({ t: 'Kosten des Nichtstuns', s: 'Ohne Veränderung kostet der heutige Betrieb über ' + G.horizon + ' Monate ' + fmtEur(inaction) + ' an IT-Aufwand, Ausfallzeit' + (state.ot ? ', Produktionsstillstand' : '') + ' und Ticketbearbeitung.' });
+    const qw = steps.find(s => s.payback <= 12 && s.stepSaving > 0); if (qw) args.push({ t: 'Schnell sichtbar', s: 'Schritt ' + (steps.indexOf(qw) + 1) + ' (' + qw.field.name + ' auf Stufe ' + qw.stage + ') zahlt sich innerhalb eines Jahres aus und finanziert die weiteren Schritte mit.' });
+    if (prevGain > 0) args.push({ t: 'Risiko und Resilienz', s: 'Jährlich ' + fmtNum(Math.round(prevGain)) + ' Vorfälle mehr werden verhindert oder ohne menschlichen Eingriff gelöst, darunter Sicherheitsvorfälle und Ausfälle, die heute Stunden kosten.' });
+    const okGoals = R.goals.filter(c => c.metAt >= 0 || c.okNow || (R.useFull && c.metAtFull >= 0)); if (okGoals.length) args.push({ t: 'Strategische Ziele', s: okGoals.map(c => c.g.name.replace(' um', '').replace(' mindestens', '').replace(' höchstens', '') + ' (' + c.fmt(c.target) + ')').join(', ') + ' werden erreicht, in etwa ' + Math.round(R.months) + ' Monaten.' });
+    args.push({ t: 'Planbarkeit', s: 'Die Investition verteilt sich auf ' + years + ' Jahre mit höchstens ' + fmtEur(maxYear) + ' in einem Jahr, in ' + R.lanes + ' parallelen Arbeitssträngen' + (state.intake.applied && state.intake.lanes ? ' passend zur Teamgröße' : '') + '. Jeder Schritt hat ein Erfolgskriterium und lässt sich einzeln beauftragen.' });
+    if (G.budgetMode !== 'available') args.push({ t: 'Budgetantrag', s: 'Beantragt werden ' + fmtEur(investTotal) + ' einmalig und ' + fmtEur(steps.reduce((s, st) => s + st.opex, 0)) + ' je Jahr laufend. Gegenwert: ' + fmtEur(savingsFull) + ' je Jahr ab Abschluss, kumuliert ' + fmtEur(cf.rows[cf.rows.length - 1].cum) + ' nach ' + cf.H + ' Monaten.' });
+    $('#argH').textContent = G.budgetMode === 'available' ? 'Warum es sich lohnt' : 'Warum es sich lohnt: Argumentation für den Budgetantrag';
+    $('#argList').innerHTML = args.map(x => '<li><span class="pv-body"><span class="pv-title">' + esc(x.t) + '</span><span class="pv-sub">' + esc(x.s) + '</span></span></li>').join('');
+    $('#rmChart').innerHTML = steps.length ? pathChart({ steps, totalMonths: R.months }) : '';
+    $('#rmList').innerHTML = R.road.steps.slice(0, R.k + 1).map((s, i) => { const prep = s.stepSaving <= 0; const sc = R.sch.steps[i]; return '<li class="' + (prep ? 'prep' : (s.payback <= 12 ? 'pay' : '')) + '"><span class="rn">' + (i + 1) + '</span><div class="rt">' + s.field.name + ': Stufe ' + (s.stage - 1) + ' → ' + s.stage + ' · ' + esc(s.title) + '<small>Monat ' + Math.round(sc.start) + ' bis ' + Math.round(sc.end) + ' · ' + fmtEur(s.invest) + ' · ' + (prep ? 'Voraussetzung' : 'spart ' + fmtEur(s.stepSaving) + ' je Jahr') + ' · Erfolgskriterium: ' + esc((TRANSITIONS[s.stage - 2] || {}).success || '') + '</small></div><div class="rv"><b>' + fmtEur(s.cumInvest) + '</b>Investition bisher</div></li>'; }).join('');
+    state.roadmapText = buildSummaryText(R, cf, yearRows, args);
+    updateStepper();
+  }
+  function buildSummaryText(R, cf, yearRows, args) {
+    const G = state.goals, steps = R.sch.steps.slice(0, R.k + 1);
+    let t = 'Zero-Touch IT Simulator – Management-Zusammenfassung' + (state.intake.customer ? ' für ' + state.intake.customer : '') + '\n\n';
+    t += 'Ziele (' + G.horizon + ' Monate): ' + R.goals.map(c => c.g.name + ' ' + c.fmt(c.target)).join('; ') + '\n';
+    t += 'Ergebnis: ' + R.verdict.title + '. ' + R.verdict.text + '\n\n';
+    t += 'Roadmap (' + steps.length + ' Schritte, etwa ' + Math.round(R.months) + ' Monate):\n';
+    steps.forEach((s, i) => { t += '  ' + (i + 1) + '. ' + s.field.name + ' auf Stufe ' + s.stage + ' (' + s.title + '), Monat ' + Math.round(s.start) + ' bis ' + Math.round(s.end) + ', ' + fmtEur(s.invest) + '\n'; });
+    t += '\nBusiness Case je Jahr:\n';
+    yearRows.forEach(r => { t += '  Jahr ' + r.y + ': Investition ' + fmtEur(r.inv) + ', laufend ' + fmtEur(r.opex) + ', Ersparnis ' + fmtEur(r.save) + ', kumuliert ' + fmtEur(r.cum) + '\n'; });
+    t += '\nArgumente:\n'; args.forEach(a => { t += '  - ' + a.t + ': ' + a.s + '\n'; });
+    t += '\nAlle Werte sind Modellannahmen aus dem Digital Twin, keine Zusagen.\n';
+    return t;
+  }
+
   /* ---------- Sonstiges ---------- */
   let toastTimer = null;
   function toast(msg) { const t = $('#toast'); t.textContent = msg; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), 2600); }
@@ -1196,6 +1413,8 @@
         if (s === 'result' && !state.evaluated) return;
         showScreen(s); return;
       }
+      const hz = t.closest('[data-horizon]'); if (hz) { state.goals.horizon = parseInt(hz.dataset.horizon, 10); state.goals.touched = true; saveGoals(); state.simResult = null; renderGoals(); return; }
+      const bm = t.closest('[data-bmode]'); if (bm) { state.goals.budgetMode = bm.dataset.bmode; state.goals.touched = true; saveGoals(); state.simResult = null; renderGoals(); return; }
       const bs = t.closest('[data-base]'); if (bs && !bs.disabled) { state.useAssessment = bs.dataset.base === 'assess'; store.set('zt.useAssessment', state.useAssessment); applyBase(); renderPlan(); return; }
       const fr = t.closest('[data-frame]'); if (fr) { state.frameIdx = parseInt(fr.dataset.frame, 10); store.set('zt.frame', state.frameIdx); renderAnalysis(); return; }
       const bd = t.closest('[data-budget]'); if (bd) { state.budgetIdx = parseInt(bd.dataset.budget, 10); store.set('zt.budget', state.budgetIdx); applyBase(); renderPlan(); return; }
@@ -1214,14 +1433,29 @@
       const cell = t.closest('.cell'); if (cell) { state.assessment[cell.dataset.afield] = parseInt(cell.dataset.astage, 10); state.assessed = true; store.set('zt.assessment', state.assessment); store.set('zt.assessed', true); renderMatrix(); return; }
       const tg = t.closest('[data-target]'); if (tg) { state.target = parseInt(tg.dataset.target, 10); store.set('zt.target', state.target); renderMatrix(); return; }
     });
-    $('#startBtn').addEventListener('click', () => showScreen('intake'));
+    $('#startBtn').addEventListener('click', () => showScreen('goals'));
     $$('.otToggle').forEach(c => c.addEventListener('change', e => setOt(e.target.checked)));
-    $('#startPlanBtn').addEventListener('click', () => showScreen('plan'));
+    $('#startPlanBtn').addEventListener('click', () => showScreen('intake'));
+    $('#goalsNextBtn').addEventListener('click', () => { state.goals.touched = true; saveGoals(); showScreen('intake'); });
+    $('#simRunBtn').addEventListener('click', () => { const R = state.simResult || computeSimulation(); adoptLevels(R.endLevels); endHandled = false; startRun(); });
+    $('#simTodayBtn').addEventListener('click', () => { const R = state.simResult || computeSimulation(); endHandled = false; startRun({ levels: R.start }); });
+    $('#simPlanBtn').addEventListener('click', () => { const R = state.simResult || computeSimulation(); adoptLevels(R.endLevels); showScreen('plan'); });
+    $('#simNextBtn').addEventListener('click', () => showScreen('roadmap'));
+    $('#rmDetailsBtn').addEventListener('click', () => showScreen('analysis'));
+    $('#rmAdoptBtn').addEventListener('click', () => { const R = state.simResult || computeSimulation(); adoptLevels(R.endLevels); showScreen('plan'); toast('Zielkonfiguration in die Planung übernommen.'); });
+    $('#rmCopyBtn').addEventListener('click', () => { const txt = state.roadmapText || ''; window.__lastSummary = txt; const ok = () => toast('Zusammenfassung in die Zwischenablage kopiert.'); if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(txt).then(ok, () => toast('Kopieren nicht möglich.')); else toast('Kopieren nicht möglich.'); });
+    document.addEventListener('input', e => {
+      const gv = e.target.dataset && e.target.dataset.goalV; if (gv) { const v = parseFloat(e.target.value); if (!isNaN(v)) { state.goals.items[gv].v = v; state.goals.touched = true; saveGoals(); state.simResult = null; } return; }
+      if (e.target.id === 'goalBudget') { state.goals.budget = Math.max(0, parseFloat(e.target.value) || 0); state.goals.touched = true; saveGoals(); state.simResult = null; renderGoalsSummary(); }
+      if (e.target.id === 'goalLanes') { state.goals.lanes = Math.max(0, Math.min(4, parseInt(e.target.value, 10) || 0)); saveGoals(); state.simResult = null; }
+      if (e.target.id === 'goalPerYear') { state.goals.perYear = Math.max(0, parseFloat(e.target.value) || 0); saveGoals(); state.simResult = null; }
+    });
+    document.addEventListener('change', e => { const go = e.target.dataset && e.target.dataset.goalOn; if (go) { state.goals.items[go].on = e.target.checked; state.goals.touched = true; saveGoals(); state.simResult = null; renderGoals(); } });
     bindIntake();
     $('#resetAllBtn').addEventListener('click', async () => { if (await ask('Planung, Durchläufe, Auswertung, Standortbestimmung und Annahmen werden gelöscht. Die Simulation beginnt von vorn. Fortfahren?')) resetAll(); });
     $('#analysisBtn').addEventListener('click', () => showScreen('analysis'));
     $('#resultAnalysisBtn').addEventListener('click', () => { endHandled = true; showScreen('analysis'); });
-    $('#analysisBack').addEventListener('click', () => showScreen(state.evaluated && state.returnScreen === 'result' ? 'result' : 'plan'));
+    $('#analysisBack').addEventListener('click', () => showScreen('roadmap'));
     $('#paramsToggle').addEventListener('click', () => { const p = $('#paramsPanel'); p.hidden = !p.hidden; $('#paramsToggle').setAttribute('aria-expanded', !p.hidden); });
     $('#varyBtn').addEventListener('change', e => { state.vary = e.target.checked; store.set('zt.vary', state.vary); toast(state.vary ? 'Jeder Durchlauf wählt Ereignisse, Zeiten und Aufwände zufällig.' : 'Jeder Durchlauf zeigt denselben Referenztag.'); });
     $('#adoptRoadBtn').addEventListener('click', () => { if (!lastRoad || !lastRoad.steps.length) return; adoptLevels(lastRoad.end); showScreen('plan'); toast('Roadmap übernommen: ' + lastRoad.steps.length + ' Schritte in der Planung gesetzt.'); });

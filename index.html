@@ -61,23 +61,136 @@
       <h2>Wie viel Zero Touch kauft Ihr Budget?</h2>
       <p>Die Simulation beginnt beim tatsächlichen Zustand eines Unternehmens: ServiceNow-Daten, Architekturunterlagen und das Wissen der Delivery-Teams ergeben ein Ist-Bild je Handlungsfeld. Darauf verteilen Sie ein Budget, lassen einen Arbeitstag mit elf typischen Ereignissen in der 3D-Szene ablaufen und erhalten eine Prognose mit Quick Wins und einem individuellen Transformationspfad: welche Investition, welche Wirkung, welche Dauer.</p>
       <ol class="howto">
+        <li><b>Ziele.</b> Strategische Ziele, Zeithorizont und Budgetlage festlegen. Fehlt das Budget, erstellt das System die Argumentation für den Antrag.</li>
         <li><b>Ist-Aufnahme.</b> ServiceNow-Export oder Direktverbindung, weitere Systeme, Dokumentation, Kurzinterview, Agenten des Kunden.</li>
-        <li><b>Digital Twin.</b> Reifegrad je Handlungsfeld mit Begründung, Validierungslauf eines erzeugten Arbeitstages und Realitätscheck gegen die gemessenen Kennzahlen.</li>
-        <li><b>Planen.</b> Stufen in den Handlungsfeldern kaufen. Manche Stufen setzen andere voraus.</li>
-        <li><b>Arbeitstag.</b> Techniker laufen zu Störungen, Automatisierung erscheint als Lichtsäule, der KI-Agent als Drohne. Rote Bildschirme zeigen blockierte Mitarbeiter.</li>
-        <li><b>Auswertung.</b> Kennzahlen im Vergleich, Wirkung je Ereignis.</li>
-        <li><b>Prognose.</b> Viele simulierte Jahre, Bewertung jeder Maßnahme, Roadmap-Vorschlag.</li>
+        <li><b>Digital Twin.</b> Reifegrad je Handlungsfeld mit Begründung, Validierungslauf eines erzeugten Arbeitstages und Realitätscheck.</li>
+        <li><b>Simulation.</b> Der Zwilling sucht den besten Pfad zu den Zielen, prüft jedes Ziel und stoppt, wenn Ziele nicht realistisch erreichbar sind. Zielzustand als Arbeitstag in 3D erleben, Varianten manuell planen.</li>
+        <li><b>Roadmap und Business Case.</b> Zeitplan, Investition und Ersparnis je Jahr, Break-even, Budgetbedarf und Begründung.</li>
       </ol>
       <p class="note">Für Unternehmen mit Produktion lässt sich eine OT-Erweiterung zuschalten: ein achtes Handlungsfeld „OT & Produktion“, fünf Produktionsereignisse mit Stillstandskosten, eine Werkhalle in der Szene und OT-Quellen in der Ist-Aufnahme.</p>
       <ol class="howto" hidden>
       </ol>
       <div class="actions">
-        <button type="button" class="btn primary big" id="startBtn">Mit Ist-Aufnahme starten</button>
-        <button type="button" class="btn" id="startPlanBtn">Ohne Kundendaten planen</button>
-        <button type="button" class="btn" data-view="path">Standort bestimmen</button>
+        <button type="button" class="btn primary big" id="startBtn">Mit Zielen starten</button>
+        <button type="button" class="btn" id="startPlanBtn">Direkt zur Ist-Aufnahme</button>
         <button type="button" class="btn" data-view="levels">Reifegrade ansehen</button>
       </div>
       <p class="note">Maus ziehen dreht die Kamera, Mausrad zoomt. Alle Zahlen sind illustrative Richtwerte. <button type="button" class="linkbtn" id="resetAllBtn">Alles zurücksetzen</button></p>
+    </div>
+  </section>
+
+  <!-- Ziele -->
+  <section class="overlay" id="screen-goals" hidden>
+    <div class="overlay-card goals">
+      <div class="plan-head single">
+        <div>
+          <div class="eyebrow">Schritt 1 · Ziele</div>
+          <h2>Was soll die IT erreichen, bis wann, mit welchem Budget?</h2>
+          <p class="muted">Die Ziele steuern die Simulation: Der Zwilling sucht den Pfad, der sie am schnellsten erreicht, prüft jedes Ziel und stoppt, wenn ein Ziel nicht realistisch erreichbar ist. Jedes Ziel ist abschaltbar.</p>
+        </div>
+      </div>
+      <section class="ana-sec">
+        <div class="ana-sec-head"><span class="ana-num">A</span><div><h3>Rahmen</h3><p class="note">Zeit, Budget und Kapazität begrenzen die Simulation.</p></div></div>
+        <div class="frame-grid">
+          <div class="budget-box">
+            <div class="eyebrow" style="margin-bottom:6px">Zeithorizont</div>
+            <div class="segments wrap" id="horizonSeg" role="group" aria-label="Zeithorizont"></div>
+            <p class="note">Bis wann sollen die Ziele erreicht sein?</p>
+          </div>
+          <div class="budget-box">
+            <div class="eyebrow" style="margin-bottom:6px">Budgetlage</div>
+            <div class="segments wrap" id="budgetModeSeg" role="group" aria-label="Budgetlage">
+              <button type="button" data-bmode="available">Budget vorhanden</button>
+              <button type="button" data-bmode="needed">Budget muss beschafft werden</button>
+            </div>
+            <div class="params-grid one" style="margin-top:8px" id="budgetAmountRow"><label>Verfügbares Budget (€, einmalig)<input type="number" id="goalBudget" min="0" step="10000"></label></div>
+            <p class="note" id="budgetModeHint"></p>
+          </div>
+          <div class="budget-box">
+            <div class="eyebrow" style="margin-bottom:6px">Kapazität</div>
+            <div class="params-grid one">
+              <label>Parallele Arbeitsstränge (0 = aus Teamgröße ableiten)<input type="number" id="goalLanes" min="0" max="4" value="0"></label>
+              <label>Maximale Investition je Jahr (€, 0 = keine Grenze)<input type="number" id="goalPerYear" min="0" step="10000" value="0"></label>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="ana-sec">
+        <div class="ana-sec-head"><span class="ana-num">B</span><div><h3>Strategische Ziele</h3><p class="note">Zielwerte beziehen sich auf den Digital Twin (Stand heute). Werte lassen sich direkt ändern.</p></div></div>
+        <div class="goal-list" id="goalList"></div>
+      </section>
+      <div class="actions plan-actions">
+        <button type="button" class="btn primary big" id="goalsNextBtn">Weiter: Ist-Aufnahme</button>
+        <span class="note" id="goalsSummary"></span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Simulation: Zielerreichung -->
+  <section class="overlay" id="screen-simulate" hidden>
+    <div class="overlay-card simulate">
+      <div class="plan-head single">
+        <div>
+          <div class="eyebrow">Schritt 4 · Simulation</div>
+          <h2 id="simTitle">Wie erreicht die IT ihre Ziele?</h2>
+          <p class="muted">Der Zwilling probiert Maßnahmen in allen Handlungsfeldern durch, wählt Schritt für Schritt die mit dem höchsten Nettonutzen je Euro und prüft nach jedem Schritt, ob die Ziele erreicht sind. Dauer, Investition und Reihenfolge folgen aus Voraussetzungen, Wartungsfenstern und Teamgröße.</p>
+        </div>
+        <div class="budget-box" id="simVerdict"></div>
+      </div>
+      <section class="ana-sec">
+        <div class="ana-sec-head"><span class="ana-num">A</span><div><h3>Zielprüfung</h3><p class="note">Je Ziel: heute, Zielwert, bester erreichbarer Wert, erreicht nach welchem Schritt und Monat.</p></div></div>
+        <div class="matrix-wrap"><table class="sn-table" id="goalTable"></table></div>
+      </section>
+      <section class="ana-sec">
+        <div class="ana-sec-head"><span class="ana-num">B</span><div><h3>Bester Pfad</h3><p class="note">Reihenfolge der Maßnahmen bis zur Zielerreichung. Grau: Voraussetzung, blau: wirksam, grüner Punkt: Ziel erreicht.</p></div></div>
+        <ol class="road" id="simPath"></ol>
+        <div class="chart-card" style="margin-top:12px"><h3>Zeitplan</h3><div id="simChart"></div></div>
+      </section>
+      <section class="ana-sec">
+        <div class="ana-sec-head"><span class="ana-num">C</span><div><h3>Zielzustand erleben und Varianten prüfen</h3><p class="note">Den Arbeitstag auf der Zielkonfiguration in der Szene ansehen, oder die Verteilung von Hand verändern und ihre Wirkung in Arbeitstag, Auswertung und Prognose prüfen.</p></div></div>
+        <div class="actions">
+          <button type="button" class="btn primary" id="simRunBtn">Zielzustand als Arbeitstag erleben</button>
+          <button type="button" class="btn" id="simTodayBtn">Heute als Arbeitstag erleben</button>
+          <button type="button" class="btn" id="simPlanBtn">Variante manuell planen</button>
+        </div>
+      </section>
+      <div class="actions plan-actions">
+        <button type="button" class="btn primary big" id="simNextBtn">Weiter: Roadmap und Business Case</button>
+        <button type="button" class="btn" data-step="goals">Ziele anpassen</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Roadmap und Business Case -->
+  <section class="overlay" id="screen-roadmap" hidden>
+    <div class="overlay-card roadmap">
+      <div class="plan-head single">
+        <div>
+          <div class="eyebrow">Schritt 5 · Roadmap und Business Case</div>
+          <h2 id="rmTitle">Roadmap und Business Case</h2>
+          <p class="muted" id="rmSummary"></p>
+        </div>
+        <div class="budget-box" id="rmBudgetBox"></div>
+      </div>
+      <section class="ana-sec">
+        <div class="ana-sec-head"><span class="ana-num">A</span><div><h3>Business Case je Jahr</h3><p class="note">Investition beim Start eines Schritts, laufende Kosten ab dem Schritt, Ersparnis ab Abschluss eines Schritts. Kumulierter Cashflow und Break-even.</p></div></div>
+        <div class="matrix-wrap"><table class="sn-table" id="caseTable"></table></div>
+        <div class="chart-card" style="margin-top:12px"><h3>Kumulierter Cashflow</h3><p class="sub">Investition und laufende Kosten gegen Ersparnis, Monat für Monat.</p><div id="caseChart"></div></div>
+      </section>
+      <section class="ana-sec">
+        <div class="ana-sec-head"><span class="ana-num">B</span><div><h3 id="argH">Warum es sich lohnt</h3><p class="note">Argumentation für Entscheider und Budgetantrag, aus dem Zwilling abgeleitet.</p></div></div>
+        <ul class="pv-list next" id="argList"></ul>
+      </section>
+      <section class="ana-sec">
+        <div class="ana-sec-head"><span class="ana-num">C</span><div><h3>Roadmap</h3><p class="note">Schritte mit Dauer, Investition und Wirkung.</p></div></div>
+        <div class="chart-card"><div id="rmChart"></div></div>
+        <ol class="road" id="rmList" style="margin-top:10px"></ol>
+      </section>
+      <div class="actions plan-actions">
+        <button type="button" class="btn primary big" id="rmCopyBtn">Management-Zusammenfassung kopieren</button>
+        <button type="button" class="btn" id="rmDetailsBtn">Prognose im Detail</button>
+        <button type="button" class="btn" id="rmAdoptBtn">Roadmap in die Planung übernehmen</button>
+      </div>
     </div>
   </section>
 
@@ -86,7 +199,7 @@
     <div class="overlay-card intake">
       <div class="plan-head">
         <div>
-          <div class="eyebrow">Schritt 1 · Ist-Aufnahme</div>
+          <div class="eyebrow">Schritt 2 · Ist-Aufnahme</div>
           <h2>Das Ist-Bild des Kunden</h2>
           <p class="muted">Drei Quellen ergeben automatisch den Reifegrad je Handlungsfeld, mit Begründung: Tickets und CMDB aus ServiceNow, Werkzeuge aus Architekturunterlagen und Wikis, Antworten der Delivery-Teams. Echte Ticketvolumen kalibrieren die Prognose. Jede Quelle ist optional.</p>
         </div>
@@ -180,7 +293,7 @@
       <div class="actions plan-actions">
         <button type="button" class="btn primary big" id="intakeNextBtn">Digital Twin erzeugen</button>
         <span class="note" id="intakeReady"></span>
-        <button type="button" class="btn ghost" id="intakeSkipBtn" style="margin-inline-start:auto">Ohne Kundendaten planen</button>
+        <button type="button" class="btn ghost" id="intakeSkipBtn" style="margin-inline-start:auto">Ohne Kundendaten zur Simulation</button>
       </div>
     </div>
   </section>
@@ -189,14 +302,14 @@
   <section class="overlay" id="screen-istbild" hidden>
     <div class="overlay-card istbild">
       <div class="reveal-run" id="revealRun">
-        <div class="eyebrow">Schritt 2 · Digital Twin</div>
+        <div class="eyebrow">Schritt 3 · Digital Twin</div>
         <h2>Digital Twin wird aufgebaut</h2>
         <ol class="reveal-steps" id="revealSteps"></ol>
       </div>
       <div class="reveal-result" id="revealResult" hidden>
         <div class="plan-head">
           <div>
-            <div class="eyebrow">Schritt 2 · Digital Twin</div>
+            <div class="eyebrow">Schritt 3 · Digital Twin</div>
             <h2 id="istbildTitle">Digital Twin</h2>
             <p class="muted" id="istbildIntro"></p>
           </div>
@@ -230,7 +343,7 @@
           <ul class="pv-list" id="quickWinList"></ul>
         </section>
         <div class="actions plan-actions">
-          <button type="button" class="btn primary big" id="applyIntakeBtn">Als Ausgangslage übernehmen und weiter: Planen</button>
+          <button type="button" class="btn primary big" id="applyIntakeBtn">Als Ausgangslage übernehmen und weiter: Simulation</button>
           <button type="button" class="btn" id="twinRunBtn2">Zwilling ablaufen lassen</button>
           <button type="button" class="btn" id="istbildBackBtn">Zurück zur Ist-Aufnahme</button>
           <button type="button" class="btn ghost" id="profileCopyBtn2">Profil kopieren</button>
@@ -245,7 +358,7 @@
     <div class="overlay-card plan">
       <div class="plan-head">
         <div>
-          <div class="eyebrow">Schritt 3 · Planen</div>
+          <div class="eyebrow">Schritt 4 · Simulation · Variante manuell planen</div>
           <h2>Budget auf Handlungsfelder verteilen</h2>
           <p class="muted">Klicken Sie auf die Stufe, die Sie erreichen wollen. Stufe 4 braucht End-to-End-Telemetrie, Stufe 5 zusätzlich AIOps und Auto-Remediation. Die Organisation begrenzt alles: Ereignisse laufen höchstens eine Stufe über der Organisation.</p>
         </div>
@@ -312,7 +425,7 @@
     <div class="overlay-card analysis">
       <div class="plan-head">
         <div>
-          <div class="eyebrow">Schritt 6 · Prognose und Roadmap</div>
+          <div class="eyebrow">Schritt 5 · Prognose im Detail</div>
           <h2>Was bringt welche Maßnahme?</h2>
           <p class="muted">Die Prognose geht von Ihrer Planung aus und rechnet sie auf Jahre hoch. Eine Maßnahme hebt genau ein Handlungsfeld um eine Stufe. Für jede mögliche Maßnahme sehen Sie, was sie kostet, was sie spart und wovon sie abhängt. Am Ende steht ein Roadmap-Vorschlag.</p>
         </div>
@@ -369,7 +482,7 @@
               <button type="button" class="btn" id="adoptStepBtn">Nur Schritt 1 übernehmen</button>
               <button type="button" class="btn ghost" id="roadRunBtn">Arbeitstag mit Zielkonfiguration starten</button>
             </div>
-            <div class="actions"><button type="button" class="btn" id="analysisBack">Zurück zur Planung</button></div>
+            <div class="actions"><button type="button" class="btn" id="analysisBack">Zurück zur Roadmap</button></div>
           </div>
           <div class="chart-card">
             <h3>Investition und Nettoersparnis je Jahr, kumuliert</h3>
@@ -395,12 +508,11 @@
   <div class="wrap">
     <button type="button" class="brand" data-home title="Zum Start"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 14l5-5 4 4 7-7"/><path d="M15 6h5v5"/></svg></span><span class="brand-text"><h1>Zero-Touch IT Simulator</h1></span></button>
     <ol class="stepper" id="steps" aria-label="Ablauf der Simulation">
-      <li><button type="button" data-step="intake"><span class="n">1</span><span class="lbl">Ist-Aufnahme</span></button></li>
-      <li><button type="button" data-step="istbild"><span class="n">2</span><span class="lbl">Digital Twin</span></button></li>
-      <li><button type="button" data-step="plan"><span class="n">3</span><span class="lbl">Planen</span></button></li>
-      <li><button type="button" data-step="run"><span class="n">4</span><span class="lbl">Arbeitstag</span></button></li>
-      <li><button type="button" data-step="result"><span class="n">5</span><span class="lbl">Auswertung</span></button></li>
-      <li><button type="button" data-step="analysis"><span class="n">6</span><span class="lbl">Prognose</span></button></li>
+      <li><button type="button" data-step="goals"><span class="n">1</span><span class="lbl">Ziele</span></button></li>
+      <li><button type="button" data-step="intake"><span class="n">2</span><span class="lbl">Ist-Aufnahme</span></button></li>
+      <li><button type="button" data-step="istbild"><span class="n">3</span><span class="lbl">Digital Twin</span></button></li>
+      <li><button type="button" data-step="simulate"><span class="n">4</span><span class="lbl">Simulation</span></button></li>
+      <li><button type="button" data-step="roadmap"><span class="n">5</span><span class="lbl">Roadmap & Business Case</span></button></li>
     </ol>
     <nav class="nav" aria-label="Wissen">
       <button type="button" data-view="levels">Reifegrade</button>

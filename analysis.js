@@ -121,7 +121,7 @@ window.Analysis = (function () {
      Erwartungswerten. Jeder Schritt wählt die Maßnahme, die allein oder als
      Auftakt einer Kette den höchsten Nettonutzen je investiertem Euro bringt.
      So werden auch Voraussetzungen gewählt, die erst später Wirkung zeigen. */
-  function roadmap(levels, budgetPoints, P) {
+  function roadmap(levels, budgetPoints, P, goalGap) {
     const steps = [];
     let cur = Object.assign({}, levels), spent = 0, baseCost = expected(cur, P).cost;
     const startCost = baseCost;
@@ -143,9 +143,23 @@ window.Analysis = (function () {
         options.push({ f, c1, l1, cost1, score: best });
       });
       if (!options.length) break;
+      const gapNow = goalGap ? goalGap(cur) : 0;
+      if (goalGap && gapNow <= 0) break;
       options.sort((a, b) => b.score - a.score);
-      const o = options[0];
-      if (o.score <= 0) break;
+      let o = options[0];
+      if (o.score <= 0 || goalGap) {
+        if (!goalGap) break;
+        // Zielgetriebene Phase: Fortschritt auf die Ziele je investiertem Euro, mit Blick auf den Folgeschritt (Voraussetzungen).
+        options.forEach(x => {
+          let g = (gapNow - goalGap(x.l1)) / x.c1.invest;
+          openSteps(x.l1, spent + x.c1.points).forEach(h => { const c2 = stepCost(x.l1, h.id, P); g = Math.max(g, (gapNow - goalGap(step(x.l1, h.id))) / (x.c1.invest + c2.invest)); });
+          x.gscore = g;
+        });
+        options.sort((a, b) => (b.gscore - a.gscore) || (b.score - a.score));
+        o = options[0];
+        if (o.gscore <= 0 && o.score <= 0) break;
+        if (o.gscore <= 0) { options.sort((a, b) => b.score - a.score); o = options[0]; }
+      }
       spent += o.c1.points; cumInvest += o.c1.invest; cumOpex += o.c1.opex;
       const saving = startCost - o.cost1;
       steps.push({ field: o.f, stage: cur[o.f.id] + 1, title: o.f.short[cur[o.f.id]], points: o.c1.points, invest: o.c1.invest, opex: o.c1.opex, stepSaving: baseCost - o.cost1, cumPoints: spent, cumInvest, cumSaving: saving, cumNet: saving - cumOpex, payback: saving - cumOpex > 0 ? cumInvest / (saving - cumOpex) * 12 : Infinity, levels: Object.assign({}, o.l1), costAfter: o.cost1 });
