@@ -131,8 +131,21 @@
         <div id="snResult"></div>
       </section>
 
+      <section class="ana-sec" aria-labelledby="inSrcH">
+        <div class="ana-sec-head"><span class="ana-num">B</span><div><h3 id="inSrcH">Weitere Systeme</h3><p class="note">Messwerte aus den Systemen selbst ergänzen die Prozesssicht des ITSM. Jede Quelle nimmt einen Export als CSV oder JSON mit Kopfzeile; Spaltennamen werden tolerant erkannt. Für Intune, Entra ID, Defender und Lizenzen genügt ein Microsoft-Graph-Token.</p></div></div>
+        <div class="src-box" style="margin-bottom:12px">
+          <div class="eyebrow" style="margin-bottom:8px">Microsoft Graph: Intune, Entra-Anmeldungen, Defender, Lizenzen auf einmal</div>
+          <div class="params-grid two">
+            <label>Zugriffstoken (Bearer)<input type="password" id="graphToken" autocomplete="off" placeholder="eyJ0eXAiOiJKV1Qi…"></label>
+            <label>&nbsp;<button type="button" class="btn" id="graphConnectBtn">Mit Graph laden</button></label>
+          </div>
+          <p class="note" id="graphStatus">Token zum Beispiel aus dem Graph Explorer oder per <code>az account get-access-token --resource https://graph.microsoft.com</code>. Benötigte Berechtigungen: DeviceManagementManagedDevices.Read.All, AuditLog.Read.All, SecurityIncident.Read.All, Organization.Read.All. Das Token bleibt im Browser.</p>
+        </div>
+        <div id="sourceGroups"></div>
+      </section>
+
       <section class="ana-sec" aria-labelledby="inDocH">
-        <div class="ana-sec-head"><span class="ana-num">B</span><div><h3 id="inDocH">Architektur, Dokumentation, Wikis</h3><p class="note">Text einfügen oder Dateien laden (Architekturüberblick, Betriebshandbuch, Toolliste, Wiki-Export). Erkannte Werkzeuge und Fähigkeiten werden Handlungsfeldern und Stufen zugeordnet; Verneinungen wie „kein SSO“ oder „SIEM geplant“ zählen als nicht vorhanden. Die Liste darunter lässt sich von Hand korrigieren.</p></div></div>
+        <div class="ana-sec-head"><span class="ana-num">C</span><div><h3 id="inDocH">Architektur, Dokumentation, Wikis</h3><p class="note">Text einfügen oder Dateien laden (Architekturüberblick, Betriebshandbuch, Toolliste, Wiki-Export). Erkannte Werkzeuge und Fähigkeiten werden Handlungsfeldern und Stufen zugeordnet; Verneinungen wie „kein SSO“ oder „SIEM geplant“ zählen als nicht vorhanden. Die Liste darunter lässt sich von Hand korrigieren.</p></div></div>
         <div class="src-grid">
           <div class="src-box">
             <textarea id="docText" rows="7" placeholder="Zum Beispiel: Clients per Intune mit Autopilot, Entra ID mit Conditional Access, Monitoring mit Checkmk, Skripte in GitLab, ServiceNow mit Self-Service-Portal, Defender for Endpoint, kein SIEM …"></textarea>
@@ -143,7 +156,7 @@
       </section>
 
       <section class="ana-sec" aria-labelledby="inIvH">
-        <div class="ana-sec-head"><span class="ana-num">C</span><div><h3 id="inIvH">Betriebswissen der Delivery-Teams</h3><p class="note">Kurzinterview mit 21 Fragen, je drei pro Handlungsfeld. Antworten stützen oder widerlegen die Stufe, die Daten und Dokumente nahelegen.</p></div></div>
+        <div class="ana-sec-head"><span class="ana-num">D</span><div><h3 id="inIvH">Betriebswissen der Delivery-Teams</h3><p class="note">Kurzinterview mit 21 Fragen, je drei pro Handlungsfeld. Antworten stützen oder widerlegen die Stufe, die Daten und Dokumente nahelegen.</p></div></div>
         <div class="questions" id="questionList"></div>
       </section>
 
@@ -176,12 +189,16 @@
             <div class="fieldbars" id="istbildBars"></div>
           </div>
         </div>
+        <section class="ana-sec" aria-labelledby="inDataH">
+          <div class="ana-sec-head"><span class="ana-num">1</span><div><h3 id="inDataH">Datenlage</h3><p class="note">Was aus welcher Quelle in das Ist-Bild eingeflossen ist.</p></div></div>
+          <div class="data-grid" id="dataGrid"></div>
+        </section>
         <section class="ana-sec" aria-labelledby="inResH">
-          <div class="ana-sec-head"><span class="ana-num">1</span><div><h3 id="inResH">Reifegrad je Handlungsfeld</h3><p class="note">Die Stufe, die Daten, Dokumentation und Interview zusammen nahelegen, mit Sicherheit und Begründung. Die Stufe lässt sich überschreiben.</p></div></div>
+          <div class="ana-sec-head"><span class="ana-num">2</span><div><h3 id="inResH">Reifegrad je Handlungsfeld</h3><p class="note">Die Stufe, die Daten, Dokumentation und Interview zusammen nahelegen, mit Sicherheit und Begründung. Die Stufe lässt sich überschreiben.</p></div></div>
           <div class="cands" id="proposalCards"></div>
         </section>
         <section class="ana-sec" aria-labelledby="inQwH">
-          <div class="ana-sec-head"><span class="ana-num">2</span><div><h3 id="inQwH">Quick Wins aus den Daten</h3><p class="note">Maßnahmen, die das Ticketaufkommen direkt adressieren und sich schnell umsetzen lassen.</p></div></div>
+          <div class="ana-sec-head"><span class="ana-num">3</span><div><h3 id="inQwH">Quick Wins aus den Daten</h3><p class="note">Maßnahmen, die das Ticketaufkommen direkt adressieren und sich schnell umsetzen lassen.</p></div></div>
           <ul class="pv-list" id="quickWinList"></ul>
         </section>
         <div class="actions plan-actions">
@@ -403,6 +420,7 @@
 <script src="connectors.js"></script>
 <script src="analysis.js"></script>
 <script src="intake.js"></script>
+<script src="sources.js"></script>
 <script src="app.js"></script>
 <!-- artifact:end -->
 </body>

@@ -172,6 +172,32 @@ window.Connectors = (function () {
     return out;
   }
 
+  /* ---------- Microsoft Graph (Intune, Entra, Defender, Lizenzen) ---------- */
+  async function fetchGraph(cfg, progress) {
+    const headers = { Authorization: 'Bearer ' + cfg.token, Accept: 'application/json' };
+    const base = 'https://graph.microsoft.com/v1.0';
+    const since = new Date(); since.setDate(since.getDate() - 30);
+    async function all(url, max) {
+      let out = [], next = url;
+      while (next && out.length < (max || 5000)) {
+        const res = await fetch(next, { headers, mode: 'cors' });
+        if (!res.ok) throw new Error('HTTP ' + res.status + ' bei ' + next.split('?')[0].replace(base, ''));
+        const j = await res.json(); out = out.concat(j.value || []); next = j['@odata.nextLink'] || null;
+      }
+      return out;
+    }
+    const out = {};
+    if (progress) progress('Intune-Geräte …');
+    out.mdm = (await all(base + '/deviceManagement/managedDevices?$select=deviceName,operatingSystem,osVersion,complianceState,lastSyncDateTime,enrolledDateTime,deviceEnrollmentType,model&$top=1000')).map(d => ({ deviceName: d.deviceName, operatingSystem: d.operatingSystem, osVersion: d.osVersion, complianceState: d.complianceState, lastSyncDateTime: d.lastSyncDateTime, enrolledDateTime: d.enrolledDateTime, deviceEnrollmentType: d.deviceEnrollmentType, model: d.model }));
+    if (progress) progress('Anmeldungen …');
+    out.signins = (await all(base + '/auditLogs/signIns?$filter=createdDateTime ge ' + since.toISOString() + '&$top=1000', cfg.maxSignins || 5000)).map(x => ({ createdDateTime: x.createdDateTime, authenticationRequirement: x.authenticationRequirement, authenticationMethod: (x.mfaDetail && x.mfaDetail.authMethod) || '', conditionalAccessStatus: x.conditionalAccessStatus, riskLevelDuringSignIn: x.riskLevelDuringSignIn, status: x.status && x.status.errorCode === 0 ? 'Success' : 'Failure' }));
+    if (progress) progress('Sicherheitsvorfälle …');
+    try { out.edr = (await all(base + '/security/incidents?$top=50', 500)).map(x => ({ detectedAt: x.createdDateTime, containedAt: x.status === 'resolved' ? x.lastUpdateDateTime : '', severity: x.severity, automated: x.determination || '' })); } catch (e) { out.edr = []; }
+    if (progress) progress('Lizenzen …');
+    try { out.licenses = (await all(base + '/subscribedSkus')).map(x => ({ product: x.skuPartNumber, purchased: x.prepaidUnits ? x.prepaidUnits.enabled : 0, assigned: x.consumedUnits })); } catch (e) { out.licenses = []; }
+    return out;
+  }
+
   /* ---------- Beispieldaten ---------- */
   function rng(seed) { let a = seed >>> 0; return () => { a = (a + 0x6D2B79F5) >>> 0; let t = a; t = Math.imul(t ^ (t >>> 15), t | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; }
   const DEMO_TEXTS = {
@@ -226,5 +252,5 @@ window.Connectors = (function () {
     return { incidents, requests, changes, cis, employees, customer: 'Nordlicht Maschinenbau GmbH (Beispiel)', docs: 'Architekturüberblick (Auszug): Clients werden per SCCM mit Image bespielt; Inventar in der CMDB von ServiceNow. Active Directory und Entra ID mit MFA über Microsoft Authenticator, kein Single Sign-on für Fachanwendungen. Monitoring der Server mit PRTG, Alarme per E-Mail. Skripte liegen in GitLab, Patch-Management über WSUS. ServiceNow ITSM mit Incident-, Request- und Change-Prozess, Self-Service-Portal vorhanden, aber wenig genutzt. Defender for Endpoint auf allen Clients, SIEM geplant. Rollen und Prozesse nach ITIL dokumentiert, Betriebshandbuch im Wiki.' };
   }
 
-  return { parseCSV, parseAny, normalize, classify, metrics, fetchServiceNow, demoData };
+  return { parseCSV, parseAny, parseDate, normalize, classify, metrics, fetchServiceNow, fetchGraph, demoData };
 })();

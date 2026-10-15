@@ -34,7 +34,7 @@
     assessment: store.get('zt.assessment', null), assessed: store.get('zt.assessed', false),
     target: store.get('zt.target', 5),
     params: Object.assign({}, PARAMS, store.get('zt.params', {})),
-    intake: Object.assign({ customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false }, store.get('zt.intake', {})),
+    intake: Object.assign({ customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false, extra: {} }, store.get('zt.intake', {})),
     frameIdx: store.get('zt.frame', null),
     vary: store.get('zt.vary', false),
     runCount: 0
@@ -697,7 +697,7 @@
     state.assessment = {}; FIELDS.forEach(f => { state.assessment[f.id] = 2; }); state.assessed = false; state.target = 5;
     state.params = Object.assign({}, PARAMS); state.frameIdx = null; state.levelView = 3;
     EVENTS.forEach(e => { e.freq = DEFAULT_FREQ[e.id]; });
-    state.intake = { customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false }; rawData = null;
+    state.intake = { customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false, extra: {} }; rawData = null; rawExtra = {};
     const pg = $('#paramsGrid'); if (pg) { pg.innerHTML = ''; $('#freqGrid').innerHTML = ''; }
     $('#feed').innerHTML = ''; window.Scene3D.reset();
     endHandled = true;
@@ -718,6 +718,7 @@
 
   /* ---------- Ist-Aufnahme ---------- */
   let rawData = null;   // Rohdaten der Sitzung (werden nicht gespeichert)
+  let rawExtra = {};    // Rohdaten weiterer Quellen je Quellen-ID
   const saveIntake = () => store.set('zt.intake', state.intake);
   const fmtDur = h => h === null || h === undefined ? '–' : (h < 1 ? Math.round(h * 60) + ' Min' : h < 48 ? fmtNum(h, 1) + ' h' : fmtNum(h / 24, 1) + ' Tage');
   const pct = v => v === null || v === undefined ? '–' : Math.round(v * 100) + ' %';
@@ -727,7 +728,42 @@
     const detPos = it.detected.filter(d => !d.negated).map(d => d.id), detNeg = it.detected.filter(d => d.negated).map(d => d.id);
     const ids = TOOL_CATALOG.map(t => t.id).filter(id => it.manual[id] === true || (it.manual[id] !== false && detPos.indexOf(id) >= 0));
     const negs = detNeg.filter(id => it.manual[id] !== true);
-    return I.signalsFromMetrics(it.metrics).concat(I.signalsFromTools(ids, negs), I.signalsFromAnswers(it.answers));
+    const extraSig = []; Object.keys(it.extra || {}).forEach(k => { const r = it.extra[k]; if (r && r.signals) r.signals.forEach(s => extraSig.push(s)); });
+    return I.signalsFromMetrics(it.metrics).concat(I.signalsFromTools(ids, negs), I.signalsFromAnswers(it.answers), extraSig);
+  }
+  function extraCtx() { const it = state.intake; return { employees: it.employees || 300, ticketsPerMonth: it.metrics && it.metrics.tickets ? it.metrics.perMonth : 0 }; }
+  function rederiveExtras() { const it = state.intake; Object.keys(rawExtra).forEach(id => { const r = window.Sources.derive(id, rawExtra[id], extraCtx()); if (r) it.extra[id] = r; }); }
+  function renderSources() {
+    const it = state.intake;
+    $('#sourceGroups').innerHTML = window.Sources.GROUPS.map(g => {
+      const list = window.Sources.SOURCES.filter(s => s.group === g.id);
+      return '<div class="src-group"><div class="tg">' + g.name + '</div><div class="src-cards">' + list.map(s => {
+        const r = it.extra && it.extra[s.id];
+        return '<div class="src-card' + (r ? ' loaded' : '') + '"><h4><span>' + esc(s.name) + '</span>' + (r ? '<span class="badge ok">' + r.count + ' Zeilen</span>' : (s.graph ? '<span class="badge lock">Graph</span>' : '')) + '</h4><div class="sys">' + esc(s.systems) + '</div><div class="tells">' + esc(s.tells) + '</div><div class="cols">' + esc(s.columns) + '</div>' +
+          (r ? '<div class="sum">' + esc(r.summary) + '</div>' : '') +
+          '<div class="acts"><label class="btn ghost" for="src_' + s.id + '">Export laden</label><input type="file" id="src_' + s.id + '" data-src="' + s.id + '" accept=".csv,.json,.txt">' + (r ? '<button type="button" class="btn ghost" data-src-clear="' + s.id + '">Entfernen</button>' : '') + '</div></div>';
+      }).join('') + '</div></div>';
+    }).join('');
+  }
+  function ingestSource(id, files) {
+    const reads = Array.from(files).map(f => new Promise(res => { const r = new FileReader(); r.onload = () => res(String(r.result || '')); r.onerror = () => res(''); r.readAsText(f); }));
+    return Promise.all(reads).then(texts => {
+      let rows = []; texts.forEach(t => { rows = rows.concat(window.Connectors.parseAny(t)); });
+      if (!rows.length) { toast('Keine Daten erkannt. Erwartet werden CSV oder JSON mit Kopfzeile.'); return; }
+      rawExtra[id] = rows; const r = window.Sources.derive(id, rows, extraCtx());
+      state.intake.extra[id] = r; state.intake.applied = false; saveIntake(); renderSources(); renderReady();
+      toast(window.Sources.SOURCES.find(s => s.id === id).name + ': ' + rows.length + ' Zeilen · ' + r.summary);
+    });
+  }
+  async function connectGraph() {
+    const token = $('#graphToken').value.trim(); if (!token) { toast('Bitte ein Zugriffstoken einfügen.'); return; }
+    const st = $('#graphStatus'); st.textContent = 'Lade …';
+    try {
+      const d = await window.Connectors.fetchGraph({ token }, msg => { st.textContent = msg; });
+      let n = 0; Object.keys(d).forEach(id => { if (d[id] && d[id].length) { rawExtra[id] = d[id]; state.intake.extra[id] = window.Sources.derive(id, d[id], extraCtx()); n++; } });
+      state.intake.applied = false; saveIntake(); renderSources(); renderReady();
+      st.textContent = 'Geladen: ' + (d.mdm || []).length + ' Geräte, ' + (d.signins || []).length + ' Anmeldungen, ' + (d.edr || []).length + ' Vorfälle, ' + (d.licenses || []).length + ' Lizenzprodukte.';
+    } catch (e) { st.textContent = 'Abruf fehlgeschlagen: ' + (e && e.message ? e.message : e) + '. Token, Berechtigungen und Netzwerk prüfen, oder Exporte laden.'; }
   }
   function intakeProposal() {
     const p = window.Intake.propose(intakeSignals());
@@ -739,14 +775,15 @@
     const it = state.intake;
     $('#custName').value = it.customer || '';
     $('#custEmployees').value = it.employees || 300;
-    renderSrcStatus(); renderSnResult(); renderToolList(); renderQuestions(); renderReady();
+    renderSrcStatus(); renderSnResult(); renderSources(); renderToolList(); renderQuestions(); renderReady();
   }
-  function intakeHasData() { const it = state.intake; return !!((it.metrics && it.metrics.tickets) || it.detected.length || Object.keys(it.manual).some(k => it.manual[k]) || Object.keys(it.answers).length); }
+  function intakeHasData() { const it = state.intake; return !!((it.metrics && it.metrics.tickets) || it.detected.length || Object.keys(it.manual).some(k => it.manual[k]) || Object.keys(it.answers).length || Object.keys(it.extra || {}).length); }
   function renderReady() {
     const it = state.intake, parts = [];
     if (it.metrics && it.metrics.tickets) parts.push(it.metrics.tickets + ' Tickets');
     const tools = it.detected.filter(d => !d.negated).length + Object.keys(it.manual).filter(k => it.manual[k]).length; if (tools) parts.push(tools + ' Werkzeuge');
     const qs = Object.keys(it.answers).length; if (qs) parts.push(qs + ' Antworten');
+    const ex = Object.keys(it.extra || {}).length; if (ex) parts.push(ex + ' weitere Systeme');
     $('#intakeReady').textContent = parts.length ? 'Bereit: ' + parts.join(', ') + '.' : 'Noch keine Quelle. Die Analyse nimmt dann Stufe 1 in allen Feldern an.';
     renderSrcStatus();
   }
@@ -759,6 +796,7 @@
       '<span class="' + (sn ? 'on' : '') + '">ServiceNow: ' + (sn ? (c.incidents || 0) + ' Incidents, ' + (c.requests || 0) + ' Requests, ' + (c.changes || 0) + ' Changes, ' + (c.cis || 0) + ' CIs' : 'keine Daten') + '</span>' +
       '<span class="' + (tools ? 'on' : '') + '">Dokumentation: ' + (tools ? it.detected.filter(d => !d.negated).length + ' Werkzeuge erkannt' : 'nichts erkannt') + '</span>' +
       '<span class="' + (qs ? 'on' : '') + '">Interview: ' + qs + ' von ' + QUESTIONS.length + ' Fragen</span>' +
+      '<span class="' + (Object.keys(it.extra || {}).length ? 'on' : '') + '">Weitere Systeme: ' + Object.keys(it.extra || {}).length + ' von ' + window.Sources.SOURCES.length + '</span>' +
       '<span class="' + (it.applied ? 'on' : '') + '">' + (it.applied ? 'Ist-Bild übernommen' : 'noch nicht übernommen') + '</span>';
   }
   function renderSnResult() {
@@ -810,15 +848,23 @@
     }).join('');
     const cands = it.metrics && it.metrics.tickets ? window.Analysis.candidates(levels, Object.assign({}, state.params, { employees: it.employees || 300 })) : [];
     const qw = window.Intake.quickWins(it.metrics, levels, cands);
+    Object.keys(it.extra || {}).forEach(k => { const r = it.extra[k]; if (r && r.quickWin && !qw.some(w => w.title === r.quickWin.title)) qw.push(r.quickWin); });
+    const items = [];
+    if (it.metrics && it.metrics.tickets) items.push({ name: 'ServiceNow / ITSM', sum: it.metrics.tickets + ' Tickets, ' + it.metrics.changes + ' Changes, ' + it.metrics.cis + ' CIs · ' + it.metrics.months.toFixed(1) + ' Monate', note: pct(it.metrics.selfServiceShare) + ' Self-Service · ' + pct(it.metrics.autoShare) + ' automatisch · Ø ' + fmtDur(it.metrics.mttrHours) });
+    const tl = it.detected.filter(d => !d.negated).length; if (tl || it.docText) items.push({ name: 'Dokumentation', sum: tl + ' Werkzeuge erkannt, ' + it.detected.filter(d => d.negated).length + ' als nicht vorhanden', note: it.docText ? Math.round(it.docText.length / 1000) + ' Tsd. Zeichen ausgewertet' : '' });
+    const qs = Object.keys(it.answers).length; if (qs) items.push({ name: 'Interview', sum: qs + ' von ' + QUESTIONS.length + ' Fragen beantwortet', note: Object.values(it.answers).filter(v => v === 'yes').length + ' ja · ' + Object.values(it.answers).filter(v => v === 'partly').length + ' teilweise · ' + Object.values(it.answers).filter(v => v === 'no').length + ' nein' });
+    window.Sources.SOURCES.forEach(s => { const r = it.extra && it.extra[s.id]; if (r) items.push({ name: s.name, sum: r.summary, note: (r.note || '') + (r.signals && r.signals.length ? (r.note ? ' · ' : '') + r.signals.length + ' Signale' : '') }); });
+    $('#dataGrid').innerHTML = items.length ? items.map(i => '<div class="data-item"><b>' + esc(i.name) + '</b><span>' + esc(i.sum) + '</span>' + (i.note ? '<small>' + esc(i.note) + '</small>' : '') + '</div>').join('') : '<div class="data-item"><span>Keine Quellen geladen.</span></div>';
     $('#quickWinList').innerHTML = qw.length ? qw.map(w => '<li><span class="lv-badge l' + w.stage + '">' + w.stage + '</span><span class="pv-body"><span class="pv-title">' + esc(w.title) + '<span class="qw-badge">Aufwand ' + w.effort + '</span></span><span class="pv-sub">' + esc(w.why) + ' Handlungsfeld: ' + fieldName(w.field) + ', Stufe ' + w.stage + '.</span></span></li>').join('') : '<li><span class="pv-body"><span class="pv-sub">Quick Wins erscheinen, sobald Ticketdaten vorliegen.</span></span></li>';
     $('#applyStatus').textContent = it.applied ? 'Bereits übernommen. Änderungen werden mit erneutem Übernehmen wirksam.' : '';
     const avg = FIELDS.reduce((s, f) => s + levels[f.id], 0) / FIELDS.length;
     const mn = Math.min.apply(null, FIELDS.map(f => levels[f.id]));
     const weakest = FIELDS.filter(f => levels[f.id] === mn).map(f => f.name);
     $('#istbildTitle').textContent = 'Ist-Bild' + (it.customer ? ' von ' + it.customer : '');
-    const src = []; if (it.metrics && it.metrics.tickets) src.push(it.metrics.tickets + ' Tickets aus ' + it.metrics.months.toFixed(1) + ' Monaten'); const tl = it.detected.filter(d => !d.negated).length + Object.keys(it.manual).filter(k => it.manual[k]).length; if (tl) src.push(tl + ' erkannte Werkzeuge'); const qs = Object.keys(it.answers).length; if (qs) src.push(qs + ' Interviewantworten');
+    const src = []; if (it.metrics && it.metrics.tickets) src.push(it.metrics.tickets + ' Tickets aus ' + it.metrics.months.toFixed(1) + ' Monaten'); if (tl) src.push(tl + ' erkannte Werkzeuge'); if (qs) src.push(qs + ' Interviewantworten'); const exn = Object.keys(it.extra || {}).length; if (exn) src.push(exn + ' weiteren Systemen');
     $('#istbildIntro').textContent = (src.length ? 'Abgeleitet aus ' + src.join(', ') + '. ' : 'Ohne Quellen wird Stufe 1 angenommen. ') + 'Die Reife wird durch das schwächste Feld begrenzt: ' + weakest.join(', ') + ' auf Stufe ' + mn + '.';
-    $('#istbildHero').innerHTML = fmtNum(avg, 1) + '<small>von 5</small>';
+    const exp = ['survey', 'dex'].map(k => it.extra && it.extra[k] && it.extra[k].experience).find(v => v !== null && v !== undefined);
+    $('#istbildHero').innerHTML = fmtNum(avg, 1) + '<small>von 5' + (exp !== undefined ? ' · Experience gemessen ' + Math.round(exp) + ' von 100' : '') + '</small>';
     $('#istbildBars').innerHTML = FIELDS.map(f => '<div class="fieldbar' + (levels[f.id] === mn && weakest.length < FIELDS.length ? ' bottleneck' : '') + '"><div class="nm">' + f.name + '</div><div class="seg">' + [1, 2, 3, 4, 5].map(n => '<i class="' + (n <= levels[f.id] ? 'on' : '') + '"></i>').join('') + '</div><div class="v">' + levels[f.id] + '</div></div>').join('');
     renderSrcStatus();
   }
@@ -832,6 +878,7 @@
     if (it.metrics && it.metrics.cis) lines.push(it.metrics.cis + ' Konfigurationselemente der CMDB geprüft');
     const tl = it.detected.length; if (tl) lines.push(tl + ' Werkzeuge in der Dokumentation erkannt, davon ' + it.detected.filter(d => d.negated).length + ' als nicht vorhanden');
     const qs = Object.keys(it.answers).length; if (qs) lines.push(qs + ' Interviewantworten ausgewertet');
+    const ex = Object.keys(it.extra || {}); if (ex.length) lines.push(ex.length + ' weitere Systeme ausgewertet: ' + ex.slice(0, 4).map(k => window.Sources.SOURCES.find(s => s.id === k).name).join(', ') + (ex.length > 4 ? ' und ' + (ex.length - 4) + ' mehr' : ''));
     lines.push('Signale je Handlungsfeld zusammengeführt und Reifegrad abgeleitet');
     lines.push('Quick Wins aus dem Ticketaufkommen bestimmt');
     run.hidden = false; res.hidden = true;
@@ -878,7 +925,8 @@
     state.intake.metrics = m;
     state.intake.counts = { incidents: rawData.incidents.length, requests: rawData.requests.length, changes: rawData.changes.length, cis: rawData.cis.length };
     state.intake.applied = false;
-    saveIntake(); renderSnResult(); renderReady();
+    rederiveExtras();
+    saveIntake(); renderSnResult(); renderSources(); renderReady();
   }
   function loadDemo() {
     const d = window.Connectors.demoData(42);
@@ -887,8 +935,9 @@
     state.intake.detected = window.Intake.detectTools(d.docs); state.intake.manual = {}; state.intake.overrides = {};
     state.intake.answers = { q_inventory: 'yes', q_zerotouch: 'no', q_roles: 'partly', q_hr: 'no', q_monitoring: 'yes', q_e2e: 'no', q_scripts: 'yes', q_workflow: 'no', q_itsm: 'yes', q_portal: 'partly', q_patch: 'yes', q_edr: 'partly', q_roles_org: 'yes', q_autoeng: 'no' };
     $('#docText').value = d.docs;
-    recomputeMetrics(); renderIntake();
-    toast('Beispielkunde geladen: ' + d.customer);
+    rawExtra = window.Sources.demoAll(7); state.intake.extra = {};
+    recomputeMetrics(); rederiveExtras(); saveIntake(); renderIntake();
+    toast('Beispielkunde geladen: ' + d.customer + ' mit ' + Object.keys(rawExtra).length + ' weiteren Quellen');
   }
   function detectFromText() {
     const text = $('#docText').value;
@@ -908,22 +957,25 @@
     const cal = window.Intake.calibrate(it.metrics, it.employees);
     const fo = {};
     if (cal) { EVENTS.forEach(e => { if (cal.freq[e.id] !== null && cal.freq[e.id] !== undefined) { e.freq = Math.round(cal.freq[e.id] * 100) / 100; fo[e.id] = e.freq; } }); state.params.coverage = cal.coverage; }
+    const extraCal = {}; Object.keys(it.extra || {}).forEach(k => { const r = it.extra[k]; if (r && r.calib) Object.keys(r.calib).forEach(t => { const v = r.calib[t]; if (v !== null && v !== undefined && isFinite(v) && v >= 0) (extraCal[t] = extraCal[t] || []).push(v); }); });
+    EVENTS.forEach(e => { const vs = extraCal[e.id]; if (!vs || !vs.length) return; const ev = vs.reduce((s, v) => s + v, 0) / vs.length; e.freq = Math.round(((fo[e.id] !== undefined ? (fo[e.id] + ev) / 2 : ev)) * 100) / 100; fo[e.id] = e.freq; });
+    const team = it.extra && it.extra.team; it.lanes = team && team.lanes ? team.lanes : null;
     store.set('zt.freq', fo); store.set('zt.params', state.params);
     const pg = $('#paramsGrid'); if (pg) { pg.innerHTML = ''; $('#freqGrid').innerHTML = ''; }
     it.applied = true; saveIntake();
     applyBase(); state.levels = Object.assign({}, state.base); store.set('zt.levels', state.levels);
     renderPlan(); renderMatrix(); renderProposal(); updateStepper();
-    toast('Ist-Bild übernommen: Ausgangslage, Mitarbeiterzahl' + (cal ? ' und Häufigkeiten aus ' + it.metrics.tickets + ' Tickets' : '') + ' gesetzt.');
+    toast('Ist-Bild übernommen: Ausgangslage, Mitarbeiterzahl' + (cal ? ', Häufigkeiten aus ' + it.metrics.tickets + ' Tickets' : '') + (Object.keys(extraCal).length ? ' und ' + Object.keys(extraCal).length + ' Messwerten weiterer Systeme' : '') + ' gesetzt.');
   }
   function profileJSON() {
     const it = state.intake; const p = intakeProposal(); const levels = {}; FIELDS.forEach(f => { levels[f.id] = p[f.id].final; });
-    return JSON.stringify({ version: 1, customer: it.customer, employees: it.employees, exportedAt: new Date().toISOString(), levels, overrides: it.overrides, answers: it.answers, detected: it.detected, manual: it.manual, docText: it.docText, metrics: it.metrics, counts: it.counts }, null, 2);
+    return JSON.stringify({ version: 1, customer: it.customer, employees: it.employees, exportedAt: new Date().toISOString(), levels, overrides: it.overrides, answers: it.answers, detected: it.detected, manual: it.manual, docText: it.docText, metrics: it.metrics, counts: it.counts, extra: it.extra }, null, 2);
   }
   function importProfile(text) {
     try {
       const j = JSON.parse(text);
-      state.intake = Object.assign({ customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false }, { customer: j.customer || '', employees: j.employees || 300, metrics: j.metrics || null, counts: j.counts || null, docText: j.docText || '', detected: j.detected || [], manual: j.manual || {}, answers: j.answers || {}, overrides: j.overrides || {} });
-      rawData = null; saveIntake(); renderIntake(); $('#docText').value = state.intake.docText; toast('Profil eingelesen' + (j.customer ? ': ' + j.customer : '') + '.');
+      state.intake = Object.assign({ customer: '', employees: 300, metrics: null, counts: null, docText: '', detected: [], manual: {}, answers: {}, overrides: {}, applied: false }, { customer: j.customer || '', employees: j.employees || 300, metrics: j.metrics || null, counts: j.counts || null, docText: j.docText || '', detected: j.detected || [], manual: j.manual || {}, answers: j.answers || {}, overrides: j.overrides || {}, extra: j.extra || {} });
+      rawData = null; rawExtra = {}; saveIntake(); renderIntake(); $('#docText').value = state.intake.docText; toast('Profil eingelesen' + (j.customer ? ': ' + j.customer : '') + '.');
     } catch (e) { toast('Die Datei ist kein gültiges Profil.'); }
   }
   async function connectServiceNow() {
@@ -949,6 +1001,9 @@
     ['dragleave', 'drop'].forEach(ev => dz.addEventListener(ev, e => { e.preventDefault(); dz.classList.remove('over'); }));
     dz.addEventListener('drop', e => { if (e.dataTransfer && e.dataTransfer.files.length) ingestFiles(e.dataTransfer.files); });
     $('#snConnectBtn').addEventListener('click', connectServiceNow);
+    $('#graphConnectBtn').addEventListener('click', connectGraph);
+    $('#sourceGroups').addEventListener('change', e => { const id = e.target.dataset && e.target.dataset.src; if (!id) return; ingestSource(id, e.target.files); e.target.value = ''; });
+    $('#sourceGroups').addEventListener('click', e => { const b = e.target.closest('[data-src-clear]'); if (!b) return; delete rawExtra[b.dataset.srcClear]; delete state.intake.extra[b.dataset.srcClear]; state.intake.applied = false; saveIntake(); renderSources(); renderReady(); });
     $('#detectBtn').addEventListener('click', detectFromText);
     $('#docText').addEventListener('change', () => { state.intake.docText = $('#docText').value; saveIntake(); });
     $('#docFiles').addEventListener('change', e => {
@@ -997,12 +1052,13 @@
   }
   function renderPath(road, L) {
     if (!road.steps.length) { $('#pathSummary').textContent = 'Kein Zeitplan ohne Roadmap.'; $('#pathChart').innerHTML = ''; return; }
-    const sch = window.Intake.schedule(road.steps, 2, L);
+    const lanes = state.intake.applied && state.intake.lanes ? state.intake.lanes : 2;
+    const sch = window.Intake.schedule(road.steps, lanes, L);
     const last = road.steps[road.steps.length - 1];
     const years = sch.totalMonths / 12;
     const perYear = last.cumInvest / Math.max(1, years);
     const end = new Date(); end.setMonth(end.getMonth() + Math.round(sch.totalMonths));
-    $('#pathSummary').innerHTML = '<b>Dauer etwa ' + Math.round(sch.totalMonths) + ' Monate</b> (bis ' + end.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }) + ') in zwei parallelen Arbeitssträngen. Investition ' + fmtEur(last.cumInvest) + ', das sind etwa ' + fmtEur(perYear) + ' je Jahr. Nach Abschluss sinken die jährlichen Kosten um ' + fmtEur(last.cumNet) + ' netto. ' + (state.intake.applied && state.intake.customer ? 'Berechnet für ' + esc(state.intake.customer) + ' mit ' + state.params.employees + ' Mitarbeitern.' : '');
+    $('#pathSummary').innerHTML = '<b>Dauer etwa ' + Math.round(sch.totalMonths) + ' Monate</b> (bis ' + end.toLocaleDateString('de-DE', { month: 'long', year: 'numeric' }) + ') in ' + (lanes === 1 ? 'einem Arbeitsstrang' : lanes + ' parallelen Arbeitssträngen') + (state.intake.applied && state.intake.lanes ? ', abgeleitet aus der Teamgröße' : '') + '. Investition ' + fmtEur(last.cumInvest) + ', das sind etwa ' + fmtEur(perYear) + ' je Jahr. Nach Abschluss sinken die jährlichen Kosten um ' + fmtEur(last.cumNet) + ' netto. ' + (state.intake.applied && state.intake.customer ? 'Berechnet für ' + esc(state.intake.customer) + ' mit ' + state.params.employees + ' Mitarbeitern.' : '');
     $('#pathChart').innerHTML = pathChart(sch);
   }
 

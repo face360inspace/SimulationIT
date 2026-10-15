@@ -686,6 +686,28 @@ svg.chart .gline { stroke: var(--line); }
 .reveal-steps li.active i { border-color: var(--accent); animation: pulse 1s ease-in-out infinite; }
 .reveal-result { animation: cardIn .6s ease-out; }
 .reveal-result .budget-box .hero-num { font-size: 2.6rem; margin: 4px 0 8px; }
+.reveal-result .budget-box .hero-num small { display: block; margin: 4px 0 0; font-size: .85rem; }
 .reveal-result .budget-box .fieldbars { margin-top: 4px; }
 .reveal-result .budget-box .fieldbar { grid-template-columns: 130px 1fr 28px; font-size: .74rem; }
 #intakeReady { align-self: center; }
+
+/* ---------- Weitere Systeme ---------- */
+.src-group { margin-top: 14px; }
+.src-group .tg { font-size: .72rem; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-3); margin-bottom: 6px; }
+.src-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 10px; }
+.src-card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.src-card.loaded { border-color: var(--agent); }
+.src-card h4 { margin: 0; font-family: var(--font-display); font-size: .92rem; font-weight: 600; display: flex; justify-content: space-between; gap: 8px; align-items: start; }
+.src-card h4 .badge { font-size: .62rem; }
+.src-card .sys { font-size: .72rem; color: var(--fg-3); }
+.src-card .tells { font-size: .8rem; color: var(--fg-2); }
+.src-card .cols { font-size: .7rem; color: var(--fg-3); font-family: var(--font-mono); }
+.src-card .sum { font-size: .8rem; color: var(--agent-ink); font-weight: 500; }
+.src-card .acts { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-top: 4px; }
+.src-card .acts input[type="file"] { display: none; }
+.data-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 8px; }
+.data-item { background: var(--surface-2); border-radius: var(--radius-s); padding: 9px 11px; font-size: .8rem; display: flex; flex-direction: column; gap: 2px; }
+.data-item b { font-size: .82rem; }
+.data-item span { color: var(--fg-2); }
+.data-item small { color: var(--fg-3); }
+code { font-family: var(--font-mono); font-size: .78em; background: var(--surface-3); padding: 1px 5px; border-radius: 4px; }
